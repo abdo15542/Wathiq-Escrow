@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wathiq_mobile/main.dart';
-import 'package:flutter/material.dart';
 
 void main() {
   testWidgets('shows Wathiq brand and test warning', (tester) async {
