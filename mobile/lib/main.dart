@@ -521,8 +521,13 @@ class _HomePageState extends State<HomePage> {
             style: TextStyle(color: Colors.white60),
           ),
           const SizedBox(height: 8),
-          Text(
-            'عنوان API: $apiBaseUrl',
+          Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(text: 'عنوان API: '),
+                TextSpan(text: apiBaseUrl),
+              ],
+            ),
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Colors.white38,
