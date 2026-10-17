@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: wathiq-escrow-api
+    runtime: node
+    rootDir: api
+    buildCommand: npm install --no-audit --no-fund
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        sync: false

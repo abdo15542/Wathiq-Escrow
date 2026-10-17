@@ -1,0 +1,18 @@
+{
+  "name": "wathiq-escrow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Wathiq Escrow MVP for BNB Smart Chain",
+  "scripts": {
+    "test": "hardhat test",
+    "compile": "hardhat compile",
+    "deploy:testnet": "hardhat run scripts/deploy.js --network bscTestnet",
+    "test:api": "npm --prefix api test",
+    "build:web": "npm --prefix web run build"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.17"
+  }
+}

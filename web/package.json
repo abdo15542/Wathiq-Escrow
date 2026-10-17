@@ -1,0 +1,1 @@
+{"name":"wathiq-web","version":"0.1.0","private":true,"scripts":{"build":"node build.js"}}
