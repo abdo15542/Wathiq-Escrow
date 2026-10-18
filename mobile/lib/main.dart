@@ -518,7 +518,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'الوسيط يحمي أموالك',
+            'إدارة عروض الصفقات بشفافية',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Color(0xFFE8BD6A),
@@ -533,7 +533,7 @@ class _HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'ضمان 2 من 3',
+                    'الضمان على السلسلة قيد الربط',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
@@ -541,12 +541,12 @@ class _HomePageState extends State<HomePage> {
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'موافقتان متوافقتان من المشتري والبائع والمحكّم '
+                    'تم إعداد عقد ERC-20 للاختبار، لكن هذا التطبيق لا يرسل معاملات ضمان على السلسلة بعد. '
                     'لتسوية الصفقة.',
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'السوق والخادم لا ينفذان ضمانًا على السلسلة حتى الآن.',
+                    'تنبيه: التطبيق الحالي يدير العروض والحسابات فقط، ولا ينفذ ضمانًا على السلسلة.',
                     style: TextStyle(color: Color(0xFFE8BD6A)),
                   ),
                 ],
