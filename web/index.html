@@ -21,7 +21,7 @@
   <p class="eyebrow">ON-CHAIN ESCROW · ERC-20</p>
   <h2>صفقات الضمان على الشبكة</h2>
   <p class="notice">يتطلب هذا القسم نشر عقد ورمز متوافقين وضبط عناوينهما في إعدادات الموقع. استخدم شبكة الاختبار ورمز MockUSDT فقط؛ لا تستخدم أموالًا حقيقية.</p>
-  <div class="actions"><button id="connectWallet" type="button">ربط محفظة الاختبار</button><button id="withdrawEscrow" type="button" class="secondary">سحب الرصيد المستحق</button></div>
+  <div class="actions"><button id="connectWallet" type="button">ربط محفظة الاختبار</button><button id="mintTestTokens" type="button" class="secondary">الحصول على 1000 رمز اختبار</button><button id="withdrawEscrow" type="button" class="secondary">سحب الرصيد المستحق</button></div>
   <div class="grid">
     <article><h3>إنشاء صفقة</h3><label for="sellerAddress">عنوان البائع</label><input id="sellerAddress" placeholder="0x..." autocomplete="off"><label for="arbiterAddress">عنوان المحكّم</label><input id="arbiterAddress" placeholder="0x..." autocomplete="off"><label for="escrowAmount">مبلغ رمز الاختبار</label><input id="escrowAmount" type="number" min="0.000001" step="any" placeholder="مثال: 10"><button id="createEscrowDeal" type="button">الموافقة ثم إيداع الرمز</button></article>
     <article><h3>متابعة الصفقة</h3><label for="dealId">رقم الصفقة</label><input id="dealId" type="number" min="1" step="1" placeholder="1"><button id="readEscrowDeal" type="button">قراءة الحالة من العقد</button><button id="voteRelease" type="button" class="secondary">تصويت لتحرير المبلغ</button><button id="voteRefund" type="button" class="secondary">تصويت لاسترداد المبلغ</button><button id="refundExpired" type="button" class="secondary">استرداد بعد 30 يومًا</button></article>
