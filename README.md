@@ -63,7 +63,7 @@ The GitHub Actions workflow runs Flutter analysis and tests on each change. It b
 
 ## Deploy to BSC testnet (manual only)
 
-For the ERC-20 escrow test flow, deploy a test-only token and then the escrow contract:
+For the ERC-20 escrow test flow, deploy a test-only token and then the escrow contract. After the token and escrow addresses are configured in the static site's environment, connect a wallet on BSC Testnet and use **الحصول على 1000 رمز اختبار** to mint worthless `mUSDT` for that wallet. The faucet refuses to run on other chain IDs or when the configured token symbol is not `mUSDT`.
 
 ```bash
 npm run deploy:mock-usdt:testnet
