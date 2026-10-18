@@ -178,6 +178,253 @@ function createApp(options = {}) {
     } catch (error) { return next(error); }
   });
 
+  async function requireAdmin(req, res, next) {
+    try {
+      const row = await findUserById(req.auth.userId);
+      if (!row) return res.status(401).json({ error: 'account no longer exists' });
+      if (row.role !== 'admin') return res.status(403).json({ error: 'administrator access required' });
+      req.admin = { id: Number(row.id), email: row.email };
+      return next();
+    } catch (error) { return next(error); }
+  }
+
+  app.get('/api/admin/overview', authenticate, requireAdmin, async (_req, res, next) => {
+    try {
+      if (pool) {
+        const [usersCount, offersCount, openCount, closedCount] = await Promise.all([
+          pool.query('SELECT COUNT(*)::int AS count FROM wathiq_users'),
+          pool.query('SELECT COUNT(*)::int AS count FROM wathiq_offers'),
+          pool.query("SELECT COUNT(*)::int AS count FROM wathiq_offers WHERE status = 'open'"),
+          pool.query("SELECT COUNT(*)::int AS count FROM wathiq_offers WHERE status = 'closed'")
+        ]);
+        return res.json({ users: usersCount.rows[0].count, offers: offersCount.rows[0].count, openOffers: openCount.rows[0].count, closedOffers: closedCount.rows[0].count });
+      }
+      return res.json({
+        users: users.length,
+        offers: offers.length,
+        openOffers: offers.filter(item => item.status === 'open').length,
+        closedOffers: offers.filter(item => item.status === 'closed').length
+      });
+    } catch (error) { return next(error); }
+  });
+
+  app.get('/api/admin/users', authenticate, requireAdmin, async (req, res, next) => {
+    try {
+      const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
+      const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+      if (pool) {
+        const [count, result] = await Promise.all([
+          pool.query('SELECT COUNT(*)::int AS total FROM wathiq_users'),
+          pool.query('SELECT id,email,display_name,role,created_at FROM wathiq_users ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset])
+        ]);
+        return res.json({ items: result.rows.map(userFromRow), total: count.rows[0].total, limit, offset });
+      }
+      const sorted = [...users].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return res.json({ items: sorted.slice(offset, offset + limit).map(userFromRow), total: users.length, limit, offset });
+    } catch (error) { return next(error); }
+  });
+
+  app.get('/api/admin/offers', authenticate, requireAdmin, async (req, res, next) => {
+    try {
+      const status = typeof req.query.status === 'string' ? req.query.status : 'all';
+      if (!['all', 'open', 'closed'].includes(status)) return res.status(400).json({ error: 'status must be all, open, or closed' });
+      const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
+      const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+      if (pool) {
+        const where = status === 'all' ? '' : ' WHERE o.status = $1';
+        const params = status === 'all' ? [limit, offset] : [status, limit, offset];
+        const count = await pool.query('SELECT COUNT(*)::int AS total FROM wathiq_offers o' + where, status === 'all' ? [] : [status]);
+        const result = await pool.query('SELECT o.id,o.owner_id,o.title,o.asset,o.price,o.payment_method,o.status,o.created_at FROM wathiq_offers o' + where + ' ORDER BY o.created_at DESC LIMIT 
+    try {
+      const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+      const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+      const asset = typeof req.query.asset === 'string' ? req.query.asset.toUpperCase() : null;
+      if (asset && !ALLOWED_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset' });
+      const result = await listOffers({ limit, offset, asset });
+      return res.json({ items: result.items, total: result.total, limit, offset });
+    } catch (error) { return next(error); }
+  });
+
+  app.get('/api/offers/:id', async (req, res, next) => {
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'invalid offer id' });
+      if (pool) {
+        const result = await pool.query("SELECT id,owner_id,title,asset,price,payment_method,status,created_at FROM wathiq_offers WHERE id = $1 AND status = 'open'", [id]);
+        if (!result.rows[0]) return res.status(404).json({ error: 'offer not found' });
+        const row = result.rows[0];
+        return res.json({ item: { id: Number(row.id), ownerId: row.owner_id == null ? null : Number(row.owner_id), title: row.title, asset: row.asset, price: Number(row.price), paymentMethod: row.payment_method, status: row.status, createdAt: new Date(row.created_at).toISOString() } });
+      }
+      const offer = offers.find(item => item.id === id && item.status === 'open');
+      if (!offer) return res.status(404).json({ error: 'offer not found' });
+      return res.json({ item: offer });
+    } catch (error) { return next(error); }
+  });
+
+  app.post('/api/offers', authenticate, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const title = typeof body.title === 'string' ? body.title.trim() : '';
+      const asset = typeof body.asset === 'string' ? body.asset.toUpperCase() : '';
+      const paymentMethod = typeof body.paymentMethod === 'string' ? body.paymentMethod : '';
+      const price = body.price;
+      if (title.length < 3 || title.length > 100) return res.status(400).json({ error: 'title must be 3-100 characters' });
+      if (!ALLOWED_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset; MVP supports BNB only' });
+      if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0 || price > 1_000_000_000) return res.status(400).json({ error: 'price must be a positive finite number within supported limits' });
+      if (!ALLOWED_PAYMENT_METHODS.has(paymentMethod)) return res.status(400).json({ error: 'unsupported paymentMethod' });
+      const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
+      const current = now();
+      const previous = createWindow.get(clientKey);
+      if (previous && current - previous.startedAt < 60_000 && previous.count >= maxCreatesPerMinute) return res.status(429).json({ error: 'rate limit exceeded; try again later' });
+      if (!previous || current - previous.startedAt >= 60_000) createWindow.set(clientKey, { startedAt: current, count: 1 });
+      else previous.count += 1;
+      let offer;
+      if (pool) {
+        const result = await pool.query("INSERT INTO wathiq_offers (owner_id,title,asset,price,payment_method,status) VALUES ($1,$2,$3,$4,$5,'open') RETURNING id,owner_id,title,asset,price,payment_method,status,created_at", [req.auth.userId, title, asset, price, paymentMethod]);
+        const row = result.rows[0];
+        offer = { id: Number(row.id), ownerId: Number(row.owner_id), title: row.title, asset: row.asset, price: Number(row.price), paymentMethod: row.payment_method, status: row.status, createdAt: new Date(row.created_at).toISOString() };
+      } else {
+        offer = { id: offers.reduce((max, item) => Math.max(max, item.id), 0) + 1, ownerId: req.auth.userId, title, asset, price, paymentMethod, createdAt: new Date(current).toISOString(), status: 'open' };
+        offers.push(offer);
+      }
+      return res.status(201).json({ item: offer });
+    } catch (error) { return next(error); }
+  });
+
+  app.patch('/api/offers/:id/close', authenticate, async (req, res, next) => {
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'invalid offer id' });
+      if (pool) {
+        const result = await pool.query("UPDATE wathiq_offers SET status = 'closed' WHERE id = $1 AND owner_id = $2 AND status = 'open' RETURNING id", [id, req.auth.userId]);
+        if (!result.rowCount) return res.status(404).json({ error: 'open offer not found for this account' });
+      } else {
+        const offer = offers.find(item => item.id === id);
+        if (!offer || offer.ownerId !== req.auth.userId || offer.status !== 'open') return res.status(404).json({ error: 'open offer not found for this account' });
+        offer.status = 'closed';
+      }
+      return res.json({ status: 'closed', id });
+    } catch (error) { return next(error); }
+  });
+
+  app.use((err, _req, res, _next) => {
+    if (err instanceof SyntaxError || err.status === 400) return res.status(400).json({ error: 'invalid request body' });
+    if (err.code === '23505') return res.status(409).json({ error: 'conflict' });
+    if (process.env.NODE_ENV !== 'test') console.error('Wathiq API error:', err);
+    return res.status(500).json({ error: 'internal server error' });
+  });
+  return app;
+}
+
+module.exports = { createApp, ensureSchema, hashPassword, verifyPassword, signToken, verifyToken };
+ + (params.length - 1) + ' OFFSET 
+    try {
+      const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+      const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+      const asset = typeof req.query.asset === 'string' ? req.query.asset.toUpperCase() : null;
+      if (asset && !ALLOWED_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset' });
+      const result = await listOffers({ limit, offset, asset });
+      return res.json({ items: result.items, total: result.total, limit, offset });
+    } catch (error) { return next(error); }
+  });
+
+  app.get('/api/offers/:id', async (req, res, next) => {
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'invalid offer id' });
+      if (pool) {
+        const result = await pool.query("SELECT id,owner_id,title,asset,price,payment_method,status,created_at FROM wathiq_offers WHERE id = $1 AND status = 'open'", [id]);
+        if (!result.rows[0]) return res.status(404).json({ error: 'offer not found' });
+        const row = result.rows[0];
+        return res.json({ item: { id: Number(row.id), ownerId: row.owner_id == null ? null : Number(row.owner_id), title: row.title, asset: row.asset, price: Number(row.price), paymentMethod: row.payment_method, status: row.status, createdAt: new Date(row.created_at).toISOString() } });
+      }
+      const offer = offers.find(item => item.id === id && item.status === 'open');
+      if (!offer) return res.status(404).json({ error: 'offer not found' });
+      return res.json({ item: offer });
+    } catch (error) { return next(error); }
+  });
+
+  app.post('/api/offers', authenticate, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const title = typeof body.title === 'string' ? body.title.trim() : '';
+      const asset = typeof body.asset === 'string' ? body.asset.toUpperCase() : '';
+      const paymentMethod = typeof body.paymentMethod === 'string' ? body.paymentMethod : '';
+      const price = body.price;
+      if (title.length < 3 || title.length > 100) return res.status(400).json({ error: 'title must be 3-100 characters' });
+      if (!ALLOWED_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset; MVP supports BNB only' });
+      if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0 || price > 1_000_000_000) return res.status(400).json({ error: 'price must be a positive finite number within supported limits' });
+      if (!ALLOWED_PAYMENT_METHODS.has(paymentMethod)) return res.status(400).json({ error: 'unsupported paymentMethod' });
+      const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
+      const current = now();
+      const previous = createWindow.get(clientKey);
+      if (previous && current - previous.startedAt < 60_000 && previous.count >= maxCreatesPerMinute) return res.status(429).json({ error: 'rate limit exceeded; try again later' });
+      if (!previous || current - previous.startedAt >= 60_000) createWindow.set(clientKey, { startedAt: current, count: 1 });
+      else previous.count += 1;
+      let offer;
+      if (pool) {
+        const result = await pool.query("INSERT INTO wathiq_offers (owner_id,title,asset,price,payment_method,status) VALUES ($1,$2,$3,$4,$5,'open') RETURNING id,owner_id,title,asset,price,payment_method,status,created_at", [req.auth.userId, title, asset, price, paymentMethod]);
+        const row = result.rows[0];
+        offer = { id: Number(row.id), ownerId: Number(row.owner_id), title: row.title, asset: row.asset, price: Number(row.price), paymentMethod: row.payment_method, status: row.status, createdAt: new Date(row.created_at).toISOString() };
+      } else {
+        offer = { id: offers.reduce((max, item) => Math.max(max, item.id), 0) + 1, ownerId: req.auth.userId, title, asset, price, paymentMethod, createdAt: new Date(current).toISOString(), status: 'open' };
+        offers.push(offer);
+      }
+      return res.status(201).json({ item: offer });
+    } catch (error) { return next(error); }
+  });
+
+  app.patch('/api/offers/:id/close', authenticate, async (req, res, next) => {
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'invalid offer id' });
+      if (pool) {
+        const result = await pool.query("UPDATE wathiq_offers SET status = 'closed' WHERE id = $1 AND owner_id = $2 AND status = 'open' RETURNING id", [id, req.auth.userId]);
+        if (!result.rowCount) return res.status(404).json({ error: 'open offer not found for this account' });
+      } else {
+        const offer = offers.find(item => item.id === id);
+        if (!offer || offer.ownerId !== req.auth.userId || offer.status !== 'open') return res.status(404).json({ error: 'open offer not found for this account' });
+        offer.status = 'closed';
+      }
+      return res.json({ status: 'closed', id });
+    } catch (error) { return next(error); }
+  });
+
+  app.use((err, _req, res, _next) => {
+    if (err instanceof SyntaxError || err.status === 400) return res.status(400).json({ error: 'invalid request body' });
+    if (err.code === '23505') return res.status(409).json({ error: 'conflict' });
+    if (process.env.NODE_ENV !== 'test') console.error('Wathiq API error:', err);
+    return res.status(500).json({ error: 'internal server error' });
+  });
+  return app;
+}
+
+module.exports = { createApp, ensureSchema, hashPassword, verifyPassword, signToken, verifyToken };
+ + params.length, params);
+        return res.json({ items: result.rows.map(row => ({ id: Number(row.id), ownerId: row.owner_id == null ? null : Number(row.owner_id), title: row.title, asset: row.asset, price: Number(row.price), paymentMethod: row.payment_method, status: row.status, createdAt: new Date(row.created_at).toISOString() })), total: count.rows[0].total, limit, offset });
+      }
+      const filtered = status === 'all' ? offers : offers.filter(item => item.status === status);
+      const sorted = [...filtered].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      return res.json({ items: sorted.slice(offset, offset + limit), total: filtered.length, limit, offset });
+    } catch (error) { return next(error); }
+  });
+
+  app.patch('/api/admin/offers/:id/close', authenticate, requireAdmin, async (req, res, next) => {
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'invalid offer id' });
+      if (pool) {
+        const result = await pool.query("UPDATE wathiq_offers SET status = 'closed' WHERE id = $1 AND status = 'open' RETURNING id", [id]);
+        if (!result.rowCount) return res.status(404).json({ error: 'open offer not found' });
+      } else {
+        const offer = offers.find(item => item.id === id);
+        if (!offer || offer.status !== 'open') return res.status(404).json({ error: 'open offer not found' });
+        offer.status = 'closed';
+      }
+      return res.json({ status: 'closed', id, closedBy: req.admin.email });
+    } catch (error) { return next(error); }
+  });
+
   app.get('/api/offers', async (req, res, next) => {
     try {
       const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
