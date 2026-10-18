@@ -97,8 +97,10 @@ function createApp(options = {}) {
   async function listOffers({ limit, offset, asset }) {
     if (pool) {
       const where = asset ? 'WHERE asset = $3 AND status = $4' : 'WHERE status = $3';
+      const countWhere = asset ? 'WHERE asset = $1 AND status = $2' : 'WHERE status = $1';
       const params = asset ? [limit, offset, asset, 'open'] : [limit, offset, 'open'];
-      const count = await pool.query('SELECT COUNT(*)::int AS total FROM wathiq_offers ' + where, params.slice(2));
+      const countParams = asset ? [asset, 'open'] : ['open'];
+      const count = await pool.query('SELECT COUNT(*)::int AS total FROM wathiq_offers ' + countWhere, countParams);
       const result = await pool.query('SELECT id,owner_id,title,asset,price,payment_method,status,created_at FROM wathiq_offers ' + where + ' ORDER BY created_at DESC LIMIT $1 OFFSET $2', params);
       return { items: result.rows.map(row => ({ id: Number(row.id), ownerId: row.owner_id == null ? null : Number(row.owner_id), title: row.title, asset: row.asset, price: Number(row.price), paymentMethod: row.payment_method, status: row.status, createdAt: new Date(row.created_at).toISOString() })), total: count.rows[0].total };
     }
