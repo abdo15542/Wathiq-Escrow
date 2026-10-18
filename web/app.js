@@ -150,7 +150,24 @@ offerForm.addEventListener('submit', async event => {
 document.getElementById('connect').addEventListener('click', () => {
   document.getElementById('onchain').scrollIntoView({ behavior: 'smooth' });
 });
-if (authToken && accountEmail) setAccountStatus('الجلسة الحالية: ' + accountEmail + ' — جارٍ التحقق عند أول طلب.');
-else setAccountStatus('لم تسجّل الدخول.');
+async function restoreSession() {
+  if (authToken) {
+    try {
+      const data = await request('/api/auth/me');
+      accountEmail = data.user.email;
+      sessionStorage.setItem('wathiq_email', accountEmail);
+      setAccountStatus('تم التحقق من الجلسة: ' + accountEmail);
+    } catch {
+      authToken = '';
+      accountEmail = '';
+      sessionStorage.removeItem('wathiq_token');
+      sessionStorage.removeItem('wathiq_email');
+      setAccountStatus('انتهت الجلسة أو لم تعد صالحة. سجّل الدخول مجددًا.');
+    }
+  } else {
+    setAccountStatus('لم تسجّل الدخول.');
+  }
+  await loadMyOffers();
+}
 loadOffers();
-loadMyOffers();
+restoreSession();
