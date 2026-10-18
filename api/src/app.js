@@ -231,10 +231,50 @@ function createApp(options = {}) {
       const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
       const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
       if (pool) {
-        const where = status === 'all' ? '' : ' WHERE o.status = $1';
+        const where = status === 'all' ? '' : ' WHERE status = $1';
+        const countParams = status === 'all' ? [] : [status];
+        const count = await pool.query('SELECT COUNT(*)::int AS total FROM wathiq_offers' + where, countParams);
         const params = status === 'all' ? [limit, offset] : [status, limit, offset];
-        const count = await pool.query('SELECT COUNT(*)::int AS total FROM wathiq_offers o' + where, status === 'all' ? [] : [status]);
-        const result = await pool.query('SELECT o.id,o.owner_id,o.title,o.asset,o.price,o.payment_method,o.status,o.created_at FROM wathiq_offers o' + where + ' ORDER BY o.created_at DESC LIMIT 
+        const limitPlaceholder = status === 'all' ? '$1' : '$2';
+        const offsetPlaceholder = status === 'all' ? '$2' : '$3';
+        const result = await pool.query(
+          'SELECT id,owner_id,title,asset,price,payment_method,status,created_at FROM wathiq_offers' + where +
+          ' ORDER BY created_at DESC LIMIT ' + limitPlaceholder + ' OFFSET ' + offsetPlaceholder,
+          params
+        );
+        return res.json({
+          items: result.rows.map(row => ({
+            id: Number(row.id), ownerId: row.owner_id == null ? null : Number(row.owner_id),
+            title: row.title, asset: row.asset, price: Number(row.price),
+            paymentMethod: row.payment_method, status: row.status,
+            createdAt: new Date(row.created_at).toISOString()
+          })),
+          total: count.rows[0].total, limit, offset
+        });
+      }
+      const filtered = status === 'all' ? offers : offers.filter(item => item.status === status);
+      const sorted = [...filtered].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      return res.json({ items: sorted.slice(offset, offset + limit), total: filtered.length, limit, offset });
+    } catch (error) { return next(error); }
+  });
+
+  app.patch('/api/admin/offers/:id/close', authenticate, requireAdmin, async (req, res, next) => {
+    try {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'invalid offer id' });
+      if (pool) {
+        const result = await pool.query("UPDATE wathiq_offers SET status = 'closed' WHERE id = $1 AND status = 'open' RETURNING id", [id]);
+        if (!result.rowCount) return res.status(404).json({ error: 'open offer not found' });
+      } else {
+        const offer = offers.find(item => item.id === id);
+        if (!offer || offer.status !== 'open') return res.status(404).json({ error: 'open offer not found' });
+        offer.status = 'closed';
+      }
+      return res.json({ status: 'closed', id, closedBy: req.admin.email });
+    } catch (error) { return next(error); }
+  });
+
+  app.get('/api/offers', async (req, res, next) => {
     try {
       const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
       const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
