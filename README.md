@@ -42,6 +42,11 @@ Contract tests use Hardhat's local EVM. A passing local test suite does **not** 
 - Configure `DATABASE_URL` to a managed PostgreSQL database and `JWT_SECRET` to a random secret of at least 32 characters in the deployment environment. Do not commit either secret. Production API startup intentionally fails if either is missing.
 - The current rate limits are per-process memory limits, not distributed limits; add a gateway or shared limiter before a public production launch.
 
+
+### Render deployment
+
+`render.yaml` defines both the API and the static web app. In the Render Blueprint setup, provide a persistent PostgreSQL `DATABASE_URL` for the API and the actual web origin for API `CORS_ORIGIN`. The static site build accepts `WATHIQ_API_BASE_URL`, `WATHIQ_ESCROW_ADDRESS`, and `WATHIQ_TOKEN_ADDRESS`; keep chain ID at `97` for testnet. The API and static site cannot become connected until those values point to real deployed resources. The APK build is published only when the GitHub repository variable `WATHIQ_API_BASE_URL` is set.
+
 ## Android APK
 
 From `mobile/` run:
