@@ -75,6 +75,15 @@ test('rejects duplicate registration, weak passwords, and invalid credentials', 
     body: JSON.stringify({ email: body.email, password: 'wrong-password-123' }),
   });
   assert.equal(login.status, 401);
+
+  for (const password of [undefined, null, 123, {}, [], 'x'.repeat(201)]) {
+    const malformed = await fetch(base + '/api/auth/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: body.email, password }),
+    });
+    assert.equal(malformed.status, 401, 'malformed password should be rejected as invalid credentials');
+    assert.deepEqual(await malformed.json(), { error: 'invalid email or password' });
+  }
 });
 
 test('offer creation requires authentication', async t => {
