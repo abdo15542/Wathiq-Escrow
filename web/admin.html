@@ -1,1 +1,137 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>إدارة واثق — تجريبية</title><link rel="stylesheet" href="styles.css"></head><body><header class="top"><a class="brand" href="index.html"><span class="mark">و</span><span>واثق <small>ADMIN CONCEPT</small></span></a><a href="index.html">العودة للموقع</a></header><main class="section"><p class="eyebrow">ADMIN / DEVELOPMENT</p><h1>لوحة إدارة واثق</h1><p class="notice">هذه شاشة واجهة فقط، ولا توفر تسجيل دخول أو صلاحيات إدارية حقيقية. لا تستخدمها لإدارة أموال أو بيانات عملاء.</p><div class="grid"><article><b>01</b><h3>الصفقات</h3><p>إعدادات مستقبلية لمتابعة حالة العقود وأحداث الشبكة.</p></article><article><b>02</b><h3>النزاعات</h3><p>قائمة تجريبية لتصميم إجراءات جمع الأدلة والتحكيم.</p></article><article><b>03</b><h3>المراقبة</h3><p>مؤشرات مستقبلية للأحداث والتنبيهات وسجل التدقيق.</p></article></div></main></body></html>
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>لوحة إدارة واثق</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .admin-wrap{max-width:1120px;margin:auto;padding:28px 18px 64px}.admin-panel{background:var(--panel,#121d30);border:1px solid var(--line,#26364d);border-radius:16px;padding:20px;margin:18px 0}.admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.admin-stat{padding:16px;border:1px solid var(--line,#26364d);border-radius:12px}.admin-stat span{display:block;color:var(--muted,#9aabc2);font-size:.9rem}.admin-stat strong{font-size:1.8rem;display:block;margin-top:6px}.admin-form{display:grid;gap:12px;max-width:460px}.admin-form input{width:100%;padding:12px;border-radius:9px;border:1px solid var(--line,#26364d);background:#0b1220;color:#fff}.admin-actions{display:flex;gap:8px;flex-wrap:wrap}.admin-table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:620px}th,td{text-align:right;padding:11px;border-bottom:1px solid var(--line,#26364d)}th{color:var(--muted,#9aabc2)}.admin-message{padding:12px;border-radius:10px;background:#0b1220;margin:12px 0;white-space:pre-wrap}.admin-danger{color:#ff9b9b}.admin-hidden{display:none!important}.admin-button{border:1px solid var(--line,#26364d);border-radius:9px;padding:9px 13px;background:#26364d;color:white;cursor:pointer}.admin-button:disabled{opacity:.5;cursor:not-allowed}
+  </style>
+</head>
+<body>
+<header class="top"><a class="brand" href="index.html"><span class="mark">و</span><span>واثق <small>لوحة الإدارة</small></span></a><a href="index.html">العودة للموقع</a></header>
+<main class="admin-wrap">
+  <p class="eyebrow">ADMINISTRATION</p><h1>لوحة إدارة واثق</h1>
+  <p>هذه لوحة إدارة متصلة بواجهة API. كل عملية إدارية تتحقق من صلاحية الحساب على الخادم؛ إخفاء الواجهة وحده لا يمنح صلاحيات.</p>
+  <div id="adminMessage" class="admin-message" role="status">أدخل بيانات حساب مسؤول موجود في قاعدة البيانات.</div>
+  <section id="adminLogin" class="admin-panel">
+    <h2>تسجيل دخول المسؤول</h2>
+    <form id="adminLoginForm" class="admin-form">
+      <label>البريد الإلكتروني<input name="email" type="email" autocomplete="username" required maxlength="254"></label>
+      <label>كلمة المرور<input name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="200"></label>
+      <button class="admin-button" type="submit">تسجيل الدخول</button>
+    </form>
+  </section>
+  <section id="adminDashboard" class="admin-hidden">
+    <div class="admin-panel"><div class="admin-actions"><strong id="adminIdentity"></strong><button class="admin-button" id="adminRefresh">تحديث البيانات</button><button class="admin-button" id="adminLogout">تسجيل الخروج</button></div></div>
+    <section class="admin-panel"><h2>نظرة عامة</h2><div class="admin-grid" id="adminStats"></div></section>
+    <section class="admin-panel"><h2>إدارة العروض</h2><div class="admin-actions"><button class="admin-button" data-offer-status="all">كل العروض</button><button class="admin-button" data-offer-status="open">المفتوحة</button><button class="admin-button" data-offer-status="closed">المغلقة</button></div><div class="admin-table-wrap"><table><thead><tr><th>المعرف</th><th>العنوان</th><th>المالك</th><th>السعر</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody id="adminOffers"></tbody></table></div></section>
+    <section class="admin-panel"><h2>حسابات المستخدمين</h2><div class="admin-table-wrap"><table><thead><tr><th>المعرف</th><th>الاسم</th><th>البريد</th><th>الصلاحية</th><th>تاريخ الإنشاء</th></tr></thead><tbody id="adminUsers"></tbody></table></div></section>
+  </section>
+</main>
+<script src="config.js"></script>
+<script>
+(() => {
+  const cfg = window.WATHIQ_CONFIG || {};
+  const api = String(cfg.apiBaseUrl || '').replace(/\\/+$/, '');
+  const $ = id => document.getElementById(id);
+  const message = (text, danger=false) => { $('adminMessage').textContent = text; $('adminMessage').classList.toggle('admin-danger', danger); };
+  let token = sessionStorage.getItem('wathiq_admin_token') || '';
+  let currentStatus = 'all';
+  async function request(path, options={}) {
+    if (!api) throw new Error('عنوان API غير مضبوط في إعدادات نشر الموقع (WATHIQ_API_BASE_URL).');
+    const headers = {...(options.headers || {})};
+    if (token) headers.authorization = 'Bearer ' + token;
+    if (options.body) headers['content-type'] = 'application/json';
+    const response = await fetch(api + path, {...options, headers});
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (response.status === 401) logout(false);
+      throw new Error(data.error || ('فشل الطلب: HTTP ' + response.status));
+    }
+    return data;
+  }
+  function logout(show=true) {
+    token = '';
+    sessionStorage.removeItem('wathiq_admin_token');
+    $('adminLogin').classList.remove('admin-hidden');
+    $('adminDashboard').classList.add('admin-hidden');
+    if (show) message('تم تسجيل الخروج.');
+  }
+  function cell(row, value) { const td=document.createElement('td'); td.textContent = value == null ? '—' : String(value); row.appendChild(td); return td; }
+  async function loadOverview() {
+    const data = await request('/api/admin/overview');
+    $('adminStats').replaceChildren();
+    for (const [label, value] of [['المستخدمون',data.users],['إجمالي العروض',data.offers],['عروض مفتوحة',data.openOffers],['عروض مغلقة',data.closedOffers]]) {
+      const box=document.createElement('div'); box.className='admin-stat';
+      const span=document.createElement('span'); span.textContent=label;
+      const strong=document.createElement('strong'); strong.textContent=String(value);
+      box.append(span,strong); $('adminStats').appendChild(box);
+    }
+  }
+  async function loadOffers() {
+    const data = await request('/api/admin/offers?status=' + encodeURIComponent(currentStatus) + '&limit=100');
+    const tbody=$('adminOffers'); tbody.replaceChildren();
+    for (const offer of data.items) {
+      const tr=document.createElement('tr');
+      cell(tr,offer.id); cell(tr,offer.title); cell(tr,offer.ownerId); cell(tr,offer.price + ' ' + offer.asset); cell(tr,offer.status === 'open' ? 'مفتوح' : 'مغلق');
+      const td=document.createElement('td');
+      if (offer.status === 'open') {
+        const button=document.createElement('button'); button.className='admin-button'; button.textContent='إغلاق العرض';
+        button.addEventListener('click', async () => {
+          if (!confirm('هل تريد إغلاق العرض #' + offer.id + '؟')) return;
+          button.disabled=true;
+          try { await request('/api/admin/offers/' + offer.id + '/close',{method:'PATCH'}); message('تم إغلاق العرض #' + offer.id); await refresh(); }
+          catch(e) { message(e.message,true); button.disabled=false; }
+        });
+        td.appendChild(button);
+      } else td.textContent='—';
+      tr.appendChild(td); tbody.appendChild(tr);
+    }
+    if (!data.items.length) { const tr=document.createElement('tr'); const td=cell(tr,'لا توجد نتائج'); td.colSpan=6; tbody.appendChild(tr); }
+  }
+  async function loadUsers() {
+    const data=await request('/api/admin/users?limit=100');
+    const tbody=$('adminUsers'); tbody.replaceChildren();
+    for (const user of data.items) {
+      const tr=document.createElement('tr');
+      cell(tr,user.id); cell(tr,user.displayName); cell(tr,user.email); cell(tr,user.role === 'admin' ? 'مسؤول' : 'مستخدم'); cell(tr,new Date(user.createdAt).toLocaleString('ar'));
+      tbody.appendChild(tr);
+    }
+  }
+  async function refresh() {
+    message('جارٍ تحميل بيانات الإدارة…');
+    try {
+      const me=await request('/api/auth/me');
+      if (me.user.role !== 'admin') { logout(false); throw new Error('هذا الحساب ليس مسؤولًا. اطلب منح الصلاحية من مسؤول قاعدة البيانات.'); }
+      $('adminLogin').classList.add('admin-hidden');
+      $('adminDashboard').classList.remove('admin-hidden');
+      $('adminIdentity').textContent='مسجّل الدخول: ' + me.user.email;
+      await Promise.all([loadOverview(),loadOffers(),loadUsers()]);
+      message('تم تحميل البيانات من الخادم.');
+    } catch(e) { message(e.message || 'تعذر تحميل لوحة الإدارة.',true); }
+  }
+  $('adminLoginForm').addEventListener('submit',async event=>{
+    event.preventDefault();
+    const form=new FormData(event.currentTarget);
+    const button=event.currentTarget.querySelector('button[type=submit]'); button.disabled=true;
+    try {
+      const data=await request('/api/auth/login',{method:'POST',body:JSON.stringify({email:form.get('email'),password:form.get('password')})});
+      token=data.token; sessionStorage.setItem('wathiq_admin_token',token);
+      await refresh();
+    } catch(e) { message(e.message || 'تعذر تسجيل الدخول.',true); }
+    finally { button.disabled=false; }
+  });
+  $('adminRefresh').addEventListener('click',refresh);
+  $('adminLogout').addEventListener('click',()=>logout());
+  document.querySelectorAll('[data-offer-status]').forEach(button=>button.addEventListener('click',async()=>{
+    currentStatus=button.dataset.offerStatus;
+    try { await loadOffers(); message('تم تحديث قائمة العروض.'); } catch(e) { message(e.message,true); }
+  }));
+  if(token) refresh();
+})();
+</script>
+</body>
+</html>
