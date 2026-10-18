@@ -46,7 +46,7 @@ jobs:
         run: npm test
 
       - name: Install API dependencies
-        run: npm ci --prefix api --no-audit --no-fund
+        run: npm install --prefix api --no-audit --no-fund
 
       - name: Test API
         run: npm run test:api
