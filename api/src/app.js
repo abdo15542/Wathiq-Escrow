@@ -62,6 +62,7 @@ function createApp(options = {}) {
   const offers = options.offers || [];
   const users = options.users || [];
   const createWindow = new Map();
+  const authWindow = new Map();
   const now = options.now || (() => Date.now());
   const maxCreatesPerMinute = options.maxCreatesPerMinute ?? 20;
   const pool = options.pool || null;
@@ -123,7 +124,19 @@ function createApp(options = {}) {
     return res.json({ status: 'ok', service: 'wathiq-api', database: pool ? 'connected' : 'memory-test-mode' });
   });
 
-  app.post('/api/auth/register', async (req, res, next) => {
+  function authRateLimit(req, res, next) {
+    const key = req.ip || req.socket.remoteAddress || 'unknown';
+    const current = now();
+    const window = authWindow.get(key);
+    if (window && current - window.startedAt < 15 * 60_000 && window.count >= 10) {
+      return res.status(429).json({ error: 'too many authentication attempts; try again in 15 minutes' });
+    }
+    if (!window || current - window.startedAt >= 15 * 60_000) authWindow.set(key, { startedAt: current, count: 1 });
+    else window.count += 1;
+    return next();
+  }
+
+  app.post('/api/auth/register', authRateLimit, async (req, res, next) => {
     try {
       const body = req.body || {};
       const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
@@ -143,7 +156,7 @@ function createApp(options = {}) {
     } catch (error) { return next(error); }
   });
 
-  app.post('/api/auth/login', async (req, res, next) => {
+  app.post('/api/auth/login', authRateLimit, async (req, res, next) => {
     try {
       const body = req.body || {};
       const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
