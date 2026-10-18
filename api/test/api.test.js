@@ -181,3 +181,14 @@ test('returns 404 for unknown offers', async t => {
   const base = await withServer(t, createApp());
   assert.equal((await fetch(base + '/api/offers/99')).status, 404);
 });
+
+test('returns 413 for request bodies larger than the configured limit', async t => {
+  const base = await withServer(t, createApp());
+  const response = await fetch(base + '/api/auth/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ padding: 'x'.repeat(33 * 1024) }),
+  });
+  assert.equal(response.status, 413);
+  assert.match((await response.json()).error, /too large/i);
+});
