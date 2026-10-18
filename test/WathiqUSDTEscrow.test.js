@@ -81,4 +81,31 @@ describe("WathiqUSDTEscrow", function () {
   it("rejects withdrawal without a credited balance", async () => {
     await expect(escrow.connect(outsider).withdraw()).to.be.revertedWithCustomError(escrow, "NothingToWithdraw");
   });
+
+  it("rejects zero and non-contract token addresses", async () => {
+    const Escrow = await ethers.getContractFactory("WathiqUSDTEscrow");
+    await expect(Escrow.deploy(ethers.ZeroAddress)).to.be.revertedWithCustomError(Escrow, "InvalidAddress");
+    await expect(Escrow.deploy(outsider.address)).to.be.revertedWithCustomError(Escrow, "InvalidAddress");
+  });
+
+  it("does not permit any further votes after a deal is settled", async () => {
+    await makeDeal();
+    await escrow.connect(buyer).voteRelease(1);
+    await escrow.connect(arbiter).voteRelease(1);
+    await expect(escrow.connect(seller).voteRelease(1)).to.be.revertedWithCustomError(escrow, "DealNotActive");
+    await expect(escrow.connect(seller).voteRefund(1)).to.be.revertedWithCustomError(escrow, "DealNotActive");
+    expect(await escrow.pendingWithdrawals(seller.address)).to.equal(amount);
+    expect(await escrow.pendingWithdrawals(buyer.address)).to.equal(0);
+  });
+
+  it("cannot settle or withdraw the same escrow amount twice", async () => {
+    await makeDeal();
+    await escrow.connect(buyer).voteRefund(1);
+    await escrow.connect(arbiter).voteRefund(1);
+    await escrow.connect(buyer).withdraw();
+    await expect(escrow.connect(buyer).withdraw()).to.be.revertedWithCustomError(escrow, "NothingToWithdraw");
+    await expect(escrow.connect(outsider).refundExpired(1)).to.be.revertedWithCustomError(escrow, "DealNotActive");
+    expect(await token.balanceOf(await escrow.getAddress())).to.equal(0);
+  });
+
 });
