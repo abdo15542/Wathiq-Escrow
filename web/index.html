@@ -1,8 +1,21 @@
 <!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101827"><title>واثق | Wathiq Escrow</title><link rel="stylesheet" href="styles.css"></head>
-<body><header class="top"><a class="brand" href="index.html"><span class="mark">و</span><span>واثق <small>WATHIQ ESCROW</small></span></a><nav><a href="#market">السوق</a><a href="#how">كيف يعمل؟</a><a href="admin.html">لوحة الإدارة التجريبية</a></nav><button id="connect">ربط المحفظة</button></header>
+<body><header class="top"><a class="brand" href="index.html"><span class="mark">و</span><span>واثق <small>WATHIQ ESCROW</small></span></a><nav><a href="#market">السوق</a><a href="#onchain">الضمان على الشبكة</a><a href="#how">كيف يعمل؟</a></nav><button id="connect" type="button">صفقات الضمان</button></header>
 <main><section class="hero"><div><p class="eyebrow">BNB SMART CHAIN · ESCROW 2-OF-3</p><h1>اشترِ وبِع بثقة.<br><em>الوسيط يحمي أموالك.</em></h1><p class="lead">صفقات رقمية بضمان عقد ذكي، وسجل واضح للموافقات. ابدأ على شبكة الاختبار قبل استخدام أموال حقيقية.</p><div class="actions"><a class="primary" href="#market">استكشف السوق</a><a class="secondary" href="#how">كيف يحميك الضمان؟</a></div><p class="notice">نسخة تطوير — لا ترسل أموالًا حقيقية. لم يُنشر العقد بعد.</p></div><div class="escrow-card"><div class="card-head"><span>حالة الضمان</span><span class="pill">شبكة اختبار</span></div><div class="amount">1.00 <small>BNB</small></div><div class="flow"><span>المشتري</span><b>2 من 3</b><span>البائع</span></div><div class="progress"><i></i></div><p>لا تُحرّر الأموال إلا بعد تصويتين متوافقين.</p><div class="mini-steps"><span>✓ إيداع</span><span>◷ موافقة</span><span>○ تسوية</span></div></div></section>
 <section id="how" class="section"><p class="eyebrow">خطوات واضحة</p><h2>كيف تعمل الصفقة؟</h2><div class="grid"><article><b>01</b><h3>أنشئ الصفقة</h3><p>حدد البائع والمحكّم والمبلغ قبل الإيداع.</p></article><article><b>02</b><h3>أودع في العقد</h3><p>يُقفل مبلغ BNB في عقد الضمان على الشبكة.</p></article><article><b>03</b><h3>صوّت للتسوية</h3><p>موافقتان من الأطراف الثلاثة تحرّران المبلغ أو تعيدانه.</p></article></div></section>
+<section id="account" class="section market">
+  <p class="eyebrow">ACCOUNT</p><h2>حساب المستخدم</h2>
+  <p>أنشئ حسابًا أو سجّل الدخول لإنشاء عروض السوق. كلمة المرور تُخزّن مجزأة على الخادم، ورمز الجلسة يبقى في جلسة المتصفح الحالية.</p>
+  <form id="authForm">
+    <select id="authMode" name="mode"><option value="register">إنشاء حساب</option><option value="login">تسجيل الدخول</option></select>
+    <input id="displayName" name="displayName" placeholder="الاسم الظاهر" minlength="2" maxlength="80">
+    <input name="email" type="email" autocomplete="email" placeholder="البريد الإلكتروني" required>
+    <input name="password" type="password" autocomplete="current-password" minlength="10" placeholder="كلمة المرور (10 أحرف على الأقل)" required>
+    <button type="submit">متابعة</button>
+  </form>
+  <p id="accountStatus" role="status">لم تسجّل الدخول.</p>
+  <button id="logoutWeb" type="button" class="secondary">تسجيل الخروج</button>
+</section>
 <section id="market" class="section market"><div><p class="eyebrow">سوق العروض</p><h2>عروض تجريبية</h2></div><form id="offerForm"><input name="title" placeholder="عنوان العرض" minlength="3" maxlength="100" required><input name="price" type="number" min="0.000001" step="any" placeholder="السعر" required><select name="paymentMethod" required><option value="bank_transfer">تحويل بنكي</option><option value="crypto">عملة رقمية</option><option value="cash">نقدًا خارج المنصة</option><option value="digital_service">خدمة رقمية</option><option value="gift_card">بطاقة هدايا</option></select><button type="submit">إضافة عرض تجريبي</button></form><p id="status" role="status">واجهة العروض تستخدم API محليًا عند تشغيل الخادم؛ ليست سوقًا إنتاجية.</p><div id="offers" class="offers"></div></section>
 <section id="onchain" class="section market">
   <p class="eyebrow">ON-CHAIN ESCROW · ERC-20</p>
