@@ -4,8 +4,9 @@ A development monorepo for Wathiq Escrow. **This repository is still under devel
 
 ## Components
 
-- `contracts/WathiqEscrow.sol`: native-BNB escrow with one vote per participant and 2-of-3 matching decisions (buyer, seller, arbiter). Settled funds are credited to `pendingWithdrawals` and claimed separately (pull payments), so a recipient contract cannot block the vote/settlement transaction by rejecting BNB.
-- `test/`: Hardhat tests for participant validation, conflicting votes, settlement, pull withdrawals and inactive deals.
+- `contracts/WathiqEscrow.sol`: native-BNB escrow with 2-of-3 decisions and pull withdrawals.
+- `contracts/WathiqUSDTEscrow.sol`: new ERC-20 escrow primitive with exact-received-amount checking, 2-of-3 decisions, pull withdrawals, and a 30-day unresolved-deal refund to the buyer. It is unaudited and only suitable for local/testnet validation. The timeout is a product-policy choice and must be reviewed.
+- `test/`: Hardhat tests for BNB escrow and ERC-20 escrow flows, including participant validation, conflicting votes, settlement, pull withdrawals and timeout refunds. `contracts/test/MockUSDT.sol` is a worthless test token only.
 - `api/`: Express API with email/password registration and login, scrypt password hashing, signed bearer tokens, owner-protected offer closure, input validation, basic per-IP throttles, and PostgreSQL persistence when `DATABASE_URL` is configured. In development without a database it uses in-memory data only. Production startup refuses to run without PostgreSQL and a `JWT_SECRET` of at least 32 characters. This is not yet a complete escrow backend.
 - `web/`: responsive Arabic-first public site and admin-preview page. The admin page is a visual preview only, not an authenticated admin console. Wallet detection does not imply contract integration.
 - `mobile/`: Flutter Android client with account registration/login, encrypted platform secure storage for the session token, public offer browsing, and authenticated offer creation. It still does not create or settle blockchain escrow deals.
@@ -55,6 +56,16 @@ flutter build apk --release
 The GitHub Actions workflow builds `mobile/build/app/outputs/flutter-apk/app-release.apk` and publishes it as a workflow artifact only after all relevant steps succeed. No APK is claimed to exist until that workflow actually passes.
 
 ## Deploy to BSC testnet (manual only)
+
+For the ERC-20 escrow test flow, deploy a test-only token and then the escrow contract:
+
+```bash
+npm run deploy:mock-usdt:testnet
+# Copy the printed test token address into WATHIQ_TEST_TOKEN_ADDRESS in .env
+npm run deploy:usdt:testnet
+```
+
+These commands refuse to run unless the selected network reports chain ID 97. `MockUSDT` is not real USDT and has no monetary value. This deployment is not a production release.
 
 1. Copy `.env.example` to `.env`.
 2. Set `BSC_TESTNET_RPC_URL` and `DEPLOYER_PRIVATE_KEY` using a wallet that contains **test BNB only**.
