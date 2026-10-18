@@ -347,6 +347,35 @@ function createApp(options = {}) {
     } catch (error) { return next(error); }
   });
 
+
+  // A signed-in account can inspect its own offers, including closed ones.
+  app.get('/api/my/offers', authenticate, async (req, res, next) => {
+    try {
+      const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+      const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+      if (pool) {
+        const [count, result] = await Promise.all([
+          pool.query('SELECT COUNT(*)::int AS total FROM wathiq_offers WHERE owner_id = $1', [req.auth.userId]),
+          pool.query(
+            'SELECT id,owner_id,title,asset,price,payment_method,status,created_at FROM wathiq_offers WHERE owner_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+            [req.auth.userId, limit, offset]
+          )
+        ]);
+        const items = result.rows.map(row => ({
+          id: Number(row.id), ownerId: row.owner_id == null ? null : Number(row.owner_id),
+          title: row.title, asset: row.asset, price: Number(row.price),
+          paymentMethod: row.payment_method, status: row.status,
+          createdAt: new Date(row.created_at).toISOString()
+        }));
+        return res.json({ items, total: count.rows[0].total, limit, offset });
+      }
+      const owned = offers
+        .filter(item => item.ownerId === req.auth.userId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      return res.json({ items: owned.slice(offset, offset + limit), total: owned.length, limit, offset });
+    } catch (error) { return next(error); }
+  });
+
   app.patch('/api/offers/:id/close', authenticate, async (req, res, next) => {
     try {
       const id = Number.parseInt(req.params.id, 10);
