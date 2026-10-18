@@ -140,6 +140,43 @@ test('only the owner can close an offer', async t => {
   assert.equal((await fetch(base + '/api/offers/' + id)).status, 404);
 });
 
+test('admin endpoints require an authenticated administrator and expose safe management data', async t => {
+  const { signToken } = require('../src/app');
+  const users = [
+    { id: 1, email: 'admin@example.com', display_name: 'Admin User', role: 'admin', created_at: '2026-01-01T00:00:00.000Z', password_salt: 'salt', password_hash: 'unused' },
+    { id: 2, email: 'member@example.com', display_name: 'Member User', role: 'user', created_at: '2026-01-02T00:00:00.000Z', password_salt: 'salt', password_hash: 'unused' },
+  ];
+  const offers = [
+    { id: 1, ownerId: 2, title: 'Open offer', asset: 'BNB', price: 3, paymentMethod: 'cash', status: 'open', createdAt: '2026-01-02T00:00:00.000Z' },
+    { id: 2, ownerId: 2, title: 'Closed offer', asset: 'BNB', price: 4, paymentMethod: 'cash', status: 'closed', createdAt: '2026-01-01T00:00:00.000Z' },
+  ];
+  const secret = 'test-secret-long-enough-for-test-cases';
+  const app = createApp({ users, offers, tokenSecret: secret });
+  const base = await withServer(t, app);
+  const memberToken = signToken({ sub: 2, role: 'user', iat: 1, exp: 9999999999 }, secret);
+  const adminToken = signToken({ sub: 1, role: 'admin', iat: 1, exp: 9999999999 }, secret);
+
+  assert.equal((await fetch(base + '/api/admin/overview')).status, 401);
+  assert.equal((await fetch(base + '/api/admin/overview', { headers: { authorization: 'Bearer ' + memberToken } })).status, 403);
+
+  const overviewResponse = await fetch(base + '/api/admin/overview', { headers: { authorization: 'Bearer ' + adminToken } });
+  assert.equal(overviewResponse.status, 200);
+  assert.deepEqual(await overviewResponse.json(), { users: 2, offers: 2, openOffers: 1, closedOffers: 1 });
+
+  const usersResponse = await fetch(base + '/api/admin/users', { headers: { authorization: 'Bearer ' + adminToken } });
+  const listedUsers = await usersResponse.json();
+  assert.equal(usersResponse.status, 200);
+  assert.equal(listedUsers.total, 2);
+  assert.equal('password_hash' in listedUsers.items[0], false);
+
+  const offersResponse = await fetch(base + '/api/admin/offers?status=open', { headers: { authorization: 'Bearer ' + adminToken } });
+  assert.equal((await offersResponse.json()).total, 1);
+
+  const closeResponse = await fetch(base + '/api/admin/offers/1/close', { method: 'PATCH', headers: { authorization: 'Bearer ' + adminToken } });
+  assert.equal(closeResponse.status, 200);
+  assert.equal(offers[0].status, 'closed');
+});
+
 test('returns 404 for unknown offers', async t => {
   const base = await withServer(t, createApp());
   assert.equal((await fetch(base + '/api/offers/99')).status, 404);
