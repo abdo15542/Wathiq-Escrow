@@ -40,6 +40,15 @@ function verifyPassword(password, salt, expectedHex) {
   return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
 }
 
+// Keep attacker-controlled client-IP keys from growing the in-process maps forever.
+function pruneRateLimitMap(map, current, windowMs, maxEntries = 5000) {
+  if (map.size < maxEntries) return;
+  for (const [key, entry] of map) {
+    if (current - entry.startedAt >= windowMs) map.delete(key);
+  }
+  while (map.size >= maxEntries) map.delete(map.keys().next().value);
+}
+
 async function ensureSchema(pool) {
   await pool.query(
     'CREATE TABLE IF NOT EXISTS wathiq_users (' +
@@ -72,6 +81,9 @@ function createApp(options = {}) {
   if (production && tokenSecret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters in production');
 
   app.disable('x-powered-by');
+  // Render terminates the public connection at one trusted proxy hop; use the client IP
+  // supplied by that proxy so rate limits are not shared by every visitor.
+  app.set('trust proxy', 1);
   app.use(helmet());
   app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:4173', methods: ['GET', 'POST', 'PATCH', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
   app.use(express.json({ limit: '32kb', strict: true }));
@@ -131,8 +143,10 @@ function createApp(options = {}) {
     if (window && current - window.startedAt < 15 * 60_000 && window.count >= 10) {
       return res.status(429).json({ error: 'too many authentication attempts; try again in 15 minutes' });
     }
-    if (!window || current - window.startedAt >= 15 * 60_000) authWindow.set(key, { startedAt: current, count: 1 });
-    else window.count += 1;
+    if (!window || current - window.startedAt >= 15 * 60_000) {
+      if (!window) pruneRateLimitMap(authWindow, current, 15 * 60_000);
+      authWindow.set(key, { startedAt: current, count: 1 });
+    } else window.count += 1;
     return next();
   }
 
@@ -316,8 +330,10 @@ function createApp(options = {}) {
       const current = now();
       const previous = createWindow.get(clientKey);
       if (previous && current - previous.startedAt < 60_000 && previous.count >= maxCreatesPerMinute) return res.status(429).json({ error: 'rate limit exceeded; try again later' });
-      if (!previous || current - previous.startedAt >= 60_000) createWindow.set(clientKey, { startedAt: current, count: 1 });
-      else previous.count += 1;
+      if (!previous || current - previous.startedAt >= 60_000) {
+        if (!previous) pruneRateLimitMap(createWindow, current, 60_000);
+        createWindow.set(clientKey, { startedAt: current, count: 1 });
+      } else previous.count += 1;
       let offer;
       if (pool) {
         const result = await pool.query("INSERT INTO wathiq_offers (owner_id,title,asset,price,payment_method,status) VALUES ($1,$2,$3,$4,$5,'open') RETURNING id,owner_id,title,asset,price,payment_method,status,created_at", [req.auth.userId, title, asset, price, paymentMethod]);
