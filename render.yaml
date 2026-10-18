@@ -2,32 +2,41 @@ services:
   - type: web
     name: wathiq-escrow-api
     runtime: node
+    plan: free
+    region: oregon
+    repo: https://github.com/abdo15542/Wathiq-Escrow
+    branch: fix/mobile-api-production-config
     rootDir: api
     buildCommand: npm install --no-audit --no-fund
     startCommand: npm start
     healthCheckPath: /health
+    autoDeployTrigger: checksPass
     envVars:
       - key: NODE_ENV
         value: production
       - key: CORS_ORIGIN
-        sync: false
+        value: https://wathiq-escrow-web.onrender.com
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: wathiq-escrow-db
+          property: connectionString
       - key: JWT_SECRET
         generateValue: true
   - type: web
     name: wathiq-escrow-web
     runtime: static
+    repo: https://github.com/abdo15542/Wathiq-Escrow
+    branch: fix/mobile-api-production-config
     rootDir: web
     buildCommand: npm run build
     staticPublishPath: dist
     envVars:
       - key: WATHIQ_API_BASE_URL
-        sync: false
+        value: https://wathiq-escrow-api.onrender.com
       - key: WATHIQ_ESCROW_ADDRESS
-        sync: false
+        value: ""
       - key: WATHIQ_TOKEN_ADDRESS
-        sync: false
+        value: ""
       - key: WATHIQ_CHAIN_ID
         value: "97"
       - key: WATHIQ_CHAIN_NAME
@@ -36,3 +45,10 @@ services:
         value: https://bsc-testnet-dataseed.bnbchain.org
       - key: WATHIQ_EXPLORER_URL
         value: https://testnet.bscscan.com
+
+databases:
+  - name: wathiq-escrow-db
+    databaseName: wathiq_escrow_db
+    plan: free
+    region: oregon
+    postgresMajorVersion: "18"
