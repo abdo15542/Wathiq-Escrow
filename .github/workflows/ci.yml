@@ -105,14 +105,12 @@ jobs:
         run: flutter test --reporter expanded
 
       - name: Build release APK
-        if: ${{ vars.WATHIQ_API_BASE_URL != '' || true }}
         working-directory: mobile
         env:
           WATHIQ_API_BASE_URL: ${{ vars.WATHIQ_API_BASE_URL || 'https://wathiq-escrow-api.onrender.com' }}
         run: flutter build apk --release --dart-define=WATHIQ_API_BASE_URL="$WATHIQ_API_BASE_URL"
 
       - name: Upload Android APK
-        if: ${{ vars.WATHIQ_API_BASE_URL != '' || true }}
         uses: actions/upload-artifact@v4
         with:
           name: wathiq-android-apk
