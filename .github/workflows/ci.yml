@@ -1,7 +1,7 @@
 name: Wathiq CI
 on:
   push:
-    branches: [main, master, feature/usdt-escrow]
+    branches: [main, master, feature/usdt-escrow, feature/production-readiness]
   pull_request:
   workflow_dispatch:
 permissions:
