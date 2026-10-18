@@ -4,6 +4,8 @@
   const outputEl = document.getElementById('escrowDetails');
   const tokenAbi = [
     'function decimals() view returns (uint8)',
+    'function symbol() view returns (string)',
+    'function mint(address to,uint256 amount)',
     'function approve(address spender,uint256 amount) returns (bool)',
     'function balanceOf(address account) view returns (uint256)',
     'function allowance(address owner,address spender) view returns (uint256)'
@@ -69,6 +71,18 @@
     await refreshBalance();
   }
   async function ensureConnected() { if (!signer) await connect(); }
+  async function mintTestTokens() {
+    await ensureConnected();
+    if (Number(cfg.chainId || 97) !== 97) throw new Error('إنشاء رموز الاختبار مسموح فقط على BSC Testnet.');
+    const symbol = await token.symbol();
+    if (symbol !== 'mUSDT') throw new Error('هذا العنوان ليس رمز MockUSDT التجريبي؛ لن يتم إنشاء أي رموز.');
+    const decimals = await token.decimals();
+    status('أكّد إنشاء 1000 رمز اختبار مجاني في المحفظة…');
+    const tx = await token.mint(account, ethers.parseUnits('1000', decimals));
+    await tx.wait();
+    status('تم إصدار 1000 mUSDT تجريبية على شبكة الاختبار. هذه الرموز لا قيمة مالية لها. المعاملة: ' + tx.hash);
+    await refreshBalance();
+  }
   async function refreshBalance() {
     if (!token || !account) return;
     const decimals = await token.decimals();
@@ -141,6 +155,7 @@
     });
   }
   bind('connectWallet', connect, 'تعذر ربط المحفظة');
+  bind('mintTestTokens', mintTestTokens, 'تعذر إصدار رموز الاختبار');
   bind('createEscrowDeal', createDeal, 'تعذر إنشاء الصفقة');
   bind('readEscrowDeal', readDeal, 'تعذر قراءة الصفقة');
   bind('voteRelease', () => transact('release', 'التصويت لتحرير المبلغ'), 'تعذر التصويت');
