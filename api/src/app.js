@@ -174,7 +174,9 @@ function createApp(options = {}) {
     try {
       const body = req.body || {};
       const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-      const password = typeof body.password === 'string' ? body.password : '';
+      const password = typeof body.password === 'string' ? body.password : null;
+      // Reject malformed or excessive credentials before scrypt; malformed JSON types must not become 500s.
+      if (password === null || password.length > 200) return res.status(401).json({ error: 'invalid email or password' });
       const user = await findUserByEmail(email);
       if (!user || !verifyPassword(password, user.password_salt, user.password_hash)) return res.status(401).json({ error: 'invalid email or password' });
       const safeUser = userFromRow(user);
