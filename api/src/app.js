@@ -36,6 +36,20 @@ function createApp(options = {}) {
   });
 
   app.post('/api/offers', (req, res) => {
+    // Validate first: malformed requests must not consume a client's create quota.
+    const body = req.body || {};
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    const asset = typeof body.asset === 'string' ? body.asset.toUpperCase() : '';
+    const paymentMethod = typeof body.paymentMethod === 'string' ? body.paymentMethod : '';
+    const price = body.price;
+
+    if (title.length < 3 || title.length > 100) return res.status(400).json({ error: 'title must be 3-100 characters' });
+    if (!ALLOWED_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset; MVP supports BNB only' });
+    if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0 || price > 1_000_000_000) {
+      return res.status(400).json({ error: 'price must be a positive finite number within supported limits' });
+    }
+    if (!ALLOWED_PAYMENT_METHODS.has(paymentMethod)) return res.status(400).json({ error: 'unsupported paymentMethod' });
+
     const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
     const current = now();
     const previous = createWindow.get(clientKey);
@@ -44,18 +58,6 @@ function createApp(options = {}) {
     }
     if (!previous || current - previous.startedAt >= 60_000) createWindow.set(clientKey, { startedAt: current, count: 1 });
     else previous.count += 1;
-
-    const body = req.body || {};
-    const title = typeof body.title === 'string' ? body.title.trim() : '';
-    const asset = typeof body.asset === 'string' ? body.asset.toUpperCase() : '';
-    const paymentMethod = typeof body.paymentMethod === 'string' ? body.paymentMethod : '';
-    const price = body.price;
-    if (title.length < 3 || title.length > 100) return res.status(400).json({ error: 'title must be 3-100 characters' });
-    if (!ALLOWED_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset; MVP supports BNB only' });
-    if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0 || price > 1_000_000_000) {
-      return res.status(400).json({ error: 'price must be a positive finite number within supported limits' });
-    }
-    if (!ALLOWED_PAYMENT_METHODS.has(paymentMethod)) return res.status(400).json({ error: 'unsupported paymentMethod' });
 
     const offer = {
       id: offers.reduce((max, item) => Math.max(max, item.id), 0) + 1,
