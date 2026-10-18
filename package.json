@@ -6,7 +6,7 @@
   "scripts": {
     "test": "hardhat test",
     "compile": "hardhat compile",
-    "deploy:testnet": "hardhat run scripts/deploy.js --network bscTestnet",
+    "deploy:testnet": "hardhat run scripts/deploy-p2p-testnet.js --network bscTestnet",
     "test:api": "npm --prefix api test",
     "build:web": "npm --prefix web run build"
   },
