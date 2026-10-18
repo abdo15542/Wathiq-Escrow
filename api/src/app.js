@@ -348,8 +348,14 @@ function createApp(options = {}) {
   });
 
   app.use((err, _req, res, _next) => {
-    if (err instanceof SyntaxError || err.status === 400) return res.status(400).json({ error: 'invalid request body' });
+    if (err.type === 'entity.too.large' || err.status === 413) {
+      return res.status(413).json({ error: 'request body too large; maximum is 32kb' });
+    }
+    if (err.type === 'entity.parse.failed' || err instanceof SyntaxError || err.status === 400) {
+      return res.status(400).json({ error: 'invalid request body' });
+    }
     if (err.code === '23505') return res.status(409).json({ error: 'conflict' });
+    if (err.status && err.status < 500) return res.status(err.status).json({ error: 'invalid request' });
     if (process.env.NODE_ENV !== 'test') console.error('Wathiq API error:', err);
     return res.status(500).json({ error: 'internal server error' });
   });
