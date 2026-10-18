@@ -6,96 +6,141 @@ async function withServer(t, app) {
   const server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
-  return `http://127.0.0.1:${server.address().port}`;
+  return 'http://127.0.0.1:' + server.address().port;
 }
+
+async function register(base, email = 'person@example.com') {
+  const response = await fetch(base + '/api/auth/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, displayName: 'Test User', password: 'a-long-test-password-123' }),
+  });
+  assert.equal(response.status, 201);
+  return (await response.json()).token;
+}
+
+function sendOffer(base, token, body) {
+  return fetch(base + '/api/offers', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+    body: JSON.stringify(body),
+  });
+}
+
+const validOffer = (title = 'Buy BNB') => ({
+  title, asset: 'BNB', price: 600, paymentMethod: 'bank_transfer',
+});
 
 test('health endpoint reports service status', async t => {
   const base = await withServer(t, createApp());
-  const response = await fetch(`${base}/health`);
+  const response = await fetch(base + '/health');
   assert.equal(response.status, 200);
   assert.equal((await response.json()).status, 'ok');
 });
 
-test('creates, lists, filters and retrieves offers', async t => {
+test('registers users, hashes passwords, logs in, and exposes authenticated profile', async t => {
   const base = await withServer(t, createApp());
-  const response = await fetch(`${base}/api/offers`, {
+  const response = await fetch(base + '/api/auth/register', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ title: 'Buy BNB', asset: 'BNB', price: 600, paymentMethod: 'bank_transfer' })
+    body: JSON.stringify({ email: ' PERSON@example.com ', displayName: 'Person', password: 'a-long-test-password-123' }),
   });
+  assert.equal(response.status, 201);
+  const created = await response.json();
+  assert.equal(created.user.email, 'person@example.com');
+  assert.equal(typeof created.token, 'string');
+  assert.equal('password_hash' in created.user, false);
+
+  const login = await fetch(base + '/api/auth/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'person@example.com', password: 'a-long-test-password-123' }),
+  });
+  assert.equal(login.status, 200);
+  const token = (await login.json()).token;
+  const me = await fetch(base + '/api/auth/me', { headers: { authorization: 'Bearer ' + token } });
+  assert.equal(me.status, 200);
+  assert.equal((await me.json()).user.email, 'person@example.com');
+});
+
+test('rejects duplicate registration, weak passwords, and invalid credentials', async t => {
+  const base = await withServer(t, createApp());
+  const body = { email: 'person@example.com', displayName: 'Person', password: 'a-long-test-password-123' };
+  const send = data => fetch(base + '/api/auth/register', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data),
+  });
+  assert.equal((await send({ ...body, password: 'short' })).status, 400);
+  assert.equal((await send(body)).status, 201);
+  assert.equal((await send(body)).status, 409);
+  const login = await fetch(base + '/api/auth/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: body.email, password: 'wrong-password-123' }),
+  });
+  assert.equal(login.status, 401);
+});
+
+test('offer creation requires authentication', async t => {
+  const base = await withServer(t, createApp());
+  const response = await fetch(base + '/api/offers', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(validOffer()),
+  });
+  assert.equal(response.status, 401);
+});
+
+test('creates, lists, filters and retrieves authenticated offers', async t => {
+  const base = await withServer(t, createApp());
+  const token = await register(base);
+  const response = await sendOffer(base, token, validOffer());
   assert.equal(response.status, 201);
   const created = (await response.json()).item;
   assert.equal(created.title, 'Buy BNB');
-  assert.equal(created.status, 'draft');
-  const list = await fetch(`${base}/api/offers?asset=BNB&limit=10`);
+  assert.equal(created.status, 'open');
+  assert.ok(created.ownerId > 0);
+  const list = await fetch(base + '/api/offers?asset=BNB&limit=10');
   assert.equal((await list.json()).total, 1);
-  const get = await fetch(`${base}/api/offers/${created.id}`);
+  const get = await fetch(base + '/api/offers/' + created.id);
   assert.equal((await get.json()).item.id, created.id);
 });
 
 test('rejects invalid offer data and unknown payment methods', async t => {
   const base = await withServer(t, createApp());
+  const token = await register(base);
   const cases = [
     { title: '', asset: 'BNB', price: 1, paymentMethod: 'bank_transfer' },
     { title: 'Buy BNB', asset: 'BTC', price: 1, paymentMethod: 'bank_transfer' },
     { title: 'Buy BNB', asset: 'BNB', price: Infinity, paymentMethod: 'bank_transfer' },
     { title: 'Buy BNB', asset: 'BNB', price: 1, paymentMethod: 'made_up' },
   ];
-  for (const body of cases) {
-    const response = await fetch(`${base}/api/offers`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
-    });
-    assert.equal(response.status, 400);
-  }
+  for (const body of cases) assert.equal((await sendOffer(base, token, body)).status, 400);
 });
 
-test('applies a simple per-client create rate limit', async t => {
+test('applies a per-client create rate limit after validation', async t => {
   let clock = 1000;
   const base = await withServer(t, createApp({ now: () => clock, maxCreatesPerMinute: 1 }));
-  const send = () => fetch(`${base}/api/offers`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ title: 'Buy BNB', asset: 'BNB', price: 2, paymentMethod: 'crypto' })
-  });
-  assert.equal((await send()).status, 201);
-  assert.equal((await send()).status, 429);
+  const token = await register(base);
+  assert.equal((await sendOffer(base, token, { ...validOffer(), title: 'x' })).status, 400);
+  assert.equal((await sendOffer(base, token, validOffer())).status, 201);
+  assert.equal((await sendOffer(base, token, validOffer('Second offer'))).status, 429);
   clock += 60_001;
-  assert.equal((await send()).status, 201);
+  assert.equal((await sendOffer(base, token, validOffer('Third offer'))).status, 201);
+});
+
+test('only the owner can close an offer', async t => {
+  const base = await withServer(t, createApp());
+  const owner = await register(base, 'owner@example.com');
+  const other = await register(base, 'other@example.com');
+  const created = await sendOffer(base, owner, validOffer());
+  const id = (await created.json()).item.id;
+  const denied = await fetch(base + '/api/offers/' + id + '/close', {
+    method: 'PATCH', headers: { authorization: 'Bearer ' + other },
+  });
+  assert.equal(denied.status, 404);
+  const closed = await fetch(base + '/api/offers/' + id + '/close', {
+    method: 'PATCH', headers: { authorization: 'Bearer ' + owner },
+  });
+  assert.equal(closed.status, 200);
+  assert.equal((await fetch(base + '/api/offers/' + id)).status, 404);
 });
 
 test('returns 404 for unknown offers', async t => {
   const base = await withServer(t, createApp());
-  assert.equal((await fetch(`${base}/api/offers/99`)).status, 404);
-});
-
-
-test('invalid offer submissions do not consume the create rate limit', async t => {
-  const base = await withServer(t, createApp({ maxCreatesPerMinute: 1 }));
-  const send = body => fetch(`${base}/api/offers`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  const invalid = await send({
-    title: 'x',
-    asset: 'BNB',
-    price: 2,
-    paymentMethod: 'crypto',
-  });
-  assert.equal(invalid.status, 400);
-
-  const valid = await send({
-    title: 'Valid offer',
-    asset: 'BNB',
-    price: 2,
-    paymentMethod: 'crypto',
-  });
-  assert.equal(valid.status, 201);
-
-  const limited = await send({
-    title: 'Second valid offer',
-    asset: 'BNB',
-    price: 3,
-    paymentMethod: 'crypto',
-  });
-  assert.equal(limited.status, 429);
+  assert.equal((await fetch(base + '/api/offers/99')).status, 404);
 });
