@@ -27,6 +27,35 @@ async function request(path, options = {}) {
   if (!response.ok) throw new Error(data.error || 'فشل الطلب: HTTP ' + response.status);
   return data;
 }
+
+async function loadMyOffers() {
+  const mineEl = document.getElementById('myOffers');
+  if (!authToken) {
+    mineEl.textContent = 'سجّل الدخول لعرض عروضك.';
+    return;
+  }
+  mineEl.textContent = 'جارٍ تحميل عروضك...';
+  try {
+    const data = await request('/api/my/offers?limit=50');
+    mineEl.replaceChildren();
+    for (const offer of data.items) {
+      const el = document.createElement('article');
+      el.className = 'offer';
+      const title = document.createElement('h3');
+      title.textContent = offer.title;
+      const details = document.createElement('p');
+      details.textContent = offer.price + ' ' + offer.asset + ' · ' + (paymentLabels[offer.paymentMethod] || offer.paymentMethod);
+      const state = document.createElement('small');
+      state.textContent = 'الحالة: ' + offer.status;
+      el.append(title, details, state);
+      mineEl.append(el);
+    }
+    if (!data.items.length) mineEl.textContent = 'ليس لديك عروض حتى الآن.';
+  } catch (error) {
+    mineEl.textContent = error.message || 'تعذر تحميل عروضك.';
+  }
+}
+
 async function loadOffers() {
   try {
     const data = await request('/api/offers');
@@ -64,6 +93,7 @@ authForm.addEventListener('submit', async event => {
     sessionStorage.setItem('wathiq_email', accountEmail);
     setAccountStatus('تم تسجيل الدخول: ' + accountEmail);
     statusEl.textContent = 'أصبح بإمكانك إنشاء عروض مرتبطة بحسابك.';
+    await loadMyOffers();
   } catch (error) {
     setAccountStatus(error.message || 'تعذر تسجيل الدخول.');
   } finally {
@@ -76,10 +106,12 @@ document.getElementById('authMode').addEventListener('change', event => {
 });
 displayName.hidden = document.getElementById('authMode').value !== 'register';
 displayName.required = !displayName.hidden;
+document.getElementById('refreshMyOffers').addEventListener('click', loadMyOffers);
 document.getElementById('logoutWeb').addEventListener('click', () => {
   authToken = ''; accountEmail = '';
   sessionStorage.removeItem('wathiq_token'); sessionStorage.removeItem('wathiq_email');
   setAccountStatus('تم تسجيل الخروج.');
+  document.getElementById('myOffers').textContent = 'سجّل الدخول لعرض عروضك.';
 });
 offerForm.addEventListener('submit', async event => {
   event.preventDefault();
@@ -93,6 +125,7 @@ offerForm.addEventListener('submit', async event => {
     statusEl.textContent = 'تم إنشاء العرض في الخادم.';
     offerForm.reset();
     await loadOffers();
+    await loadMyOffers();
   } catch (error) {
     statusEl.textContent = error.message || 'تعذر إنشاء العرض.';
   }
@@ -103,3 +136,4 @@ document.getElementById('connect').addEventListener('click', () => {
 if (authToken && accountEmail) setAccountStatus('الجلسة الحالية: ' + accountEmail + ' — جارٍ التحقق عند أول طلب.');
 else setAccountStatus('لم تسجّل الدخول.');
 loadOffers();
+loadMyOffers();
