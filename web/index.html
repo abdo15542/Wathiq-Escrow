@@ -14,6 +14,8 @@
     <button type="submit">متابعة</button>
   </form>
   <p id="accountStatus" role="status">لم تسجّل الدخول.</p>
+  <div class="actions"><button id="refreshMyOffers" type="button" class="secondary">عرض عروضي</button></div>
+  <div id="myOffers" class="offers" aria-live="polite">سجّل الدخول لعرض عروضك.</div>
   <button id="logoutWeb" type="button" class="secondary">تسجيل الخروج</button>
 </section>
 <section id="market" class="section market"><div><p class="eyebrow">سوق العروض</p><h2>عروض تجريبية</h2></div><form id="offerForm"><input name="title" placeholder="عنوان العرض" minlength="3" maxlength="100" required><input name="price" type="number" min="0.000001" step="any" placeholder="السعر" required><select name="paymentMethod" required><option value="bank_transfer">تحويل بنكي</option><option value="crypto">عملة رقمية</option><option value="cash">نقدًا خارج المنصة</option><option value="digital_service">خدمة رقمية</option><option value="gift_card">بطاقة هدايا</option></select><button type="submit">إضافة عرض تجريبي</button></form><p id="status" role="status">واجهة العروض تستخدم API محليًا عند تشغيل الخادم؛ ليست سوقًا إنتاجية.</p><div id="offers" class="offers"></div></section>
