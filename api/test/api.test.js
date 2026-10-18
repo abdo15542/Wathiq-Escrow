@@ -65,3 +65,37 @@ test('returns 404 for unknown offers', async t => {
   const base = await withServer(t, createApp());
   assert.equal((await fetch(`${base}/api/offers/99`)).status, 404);
 });
+
+
+test('invalid offer submissions do not consume the create rate limit', async t => {
+  const base = await withServer(t, createApp({ maxCreatesPerMinute: 1 }));
+  const send = body => fetch(`${base}/api/offers`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const invalid = await send({
+    title: 'x',
+    asset: 'BNB',
+    price: 2,
+    paymentMethod: 'crypto',
+  });
+  assert.equal(invalid.status, 400);
+
+  const valid = await send({
+    title: 'Valid offer',
+    asset: 'BNB',
+    price: 2,
+    paymentMethod: 'crypto',
+  });
+  assert.equal(valid.status, 201);
+
+  const limited = await send({
+    title: 'Second valid offer',
+    asset: 'BNB',
+    price: 3,
+    paymentMethod: 'crypto',
+  });
+  assert.equal(limited.status, 429);
+});
