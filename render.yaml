@@ -14,7 +14,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
-        sync: false
+        generateValue: true
   - type: web
     name: wathiq-escrow-web
     runtime: static
