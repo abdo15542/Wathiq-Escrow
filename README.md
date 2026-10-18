@@ -47,7 +47,7 @@ Contract tests use Hardhat's local EVM. A passing local test suite does **not** 
 
 ### Render deployment
 
-`render.yaml` defines both the API and the static web app. In the Render Blueprint setup, provide a persistent PostgreSQL `DATABASE_URL` for the API and the actual web origin for API `CORS_ORIGIN`. The static site build accepts `WATHIQ_API_BASE_URL`, `WATHIQ_ESCROW_ADDRESS`, and `WATHIQ_TOKEN_ADDRESS`; keep chain ID at `97` for testnet. The API and static site cannot become connected until those values point to real deployed resources. The APK build is published only when the GitHub repository variable `WATHIQ_API_BASE_URL` is set.
+`render.yaml` defines both the API and the static web app. In the Render Blueprint setup, provide a persistent PostgreSQL `DATABASE_URL` for the API and the actual web origin for API `CORS_ORIGIN`. The static site build accepts `WATHIQ_API_BASE_URL`, `WATHIQ_ESCROW_ADDRESS`, and `WATHIQ_TOKEN_ADDRESS`; keep chain ID at `97` for testnet. The Render Blueprint now provisions `wathiq-escrow-api`, associates the `wathiq-escrow-db` database, and deploys `wathiq-escrow-web`. Confirm `/health` and exercise registration, login, and offer creation after every deployment. The free Render database is temporary and expires unless upgraded; do not treat this configuration as durable production infrastructure.
 
 ## Android APK
 
@@ -61,7 +61,7 @@ export WATHIQ_API_BASE_URL='https://YOUR-DEPLOYED-API-ORIGIN'
 flutter build apk --release --dart-define=WATHIQ_API_BASE_URL="$WATHIQ_API_BASE_URL"
 ```
 
-The GitHub Actions workflow runs Flutter analysis and tests on each change. It builds and publishes `mobile/build/app/outputs/flutter-apk/app-release.apk` only when the repository variable `WATHIQ_API_BASE_URL` is configured; without a real endpoint it deliberately skips APK publication rather than distributing an app that cannot connect to a server. No APK is claimed to exist until that workflow actually passes.
+The GitHub Actions workflow runs Flutter analysis and tests on each change, then builds `mobile/build/app/outputs/flutter-apk/app-release.apk` with `https://wathiq-escrow-api.onrender.com` as the default API endpoint. Set the repository variable `WATHIQ_API_BASE_URL` only if the deployed API origin differs. The APK is published as the `wathiq-android-apk` workflow artifact when the build passes; a successful build does not by itself prove that the app's live API calls or blockchain escrow flows work end to end.
 
 ## Deploy to BSC testnet (manual only)
 
