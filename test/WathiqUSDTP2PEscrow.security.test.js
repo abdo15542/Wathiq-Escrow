@@ -164,4 +164,47 @@ describe("WathiqUSDTP2PEscrow security checks", function () {
       escrow.connect(moderator).resolveDispute(999, false)
     ).to.be.revertedWithCustomError(escrow, "DealNotFound");
   });
+
+  it("rejects a token address that has no contract code", async function () {
+    const Escrow =
+      await ethers.getContractFactory("WathiqUSDTP2PEscrow");
+
+    await expect(
+      Escrow.deploy(outsider.address, moderator.address)
+    ).to.be.revertedWithCustomError(Escrow, "InvalidAddress");
+  });
+
+  it("allows payment reporting exactly at the deadline", async function () {
+    const deadline = await createDeal();
+
+    await network.provider.send("evm_setNextBlockTimestamp", [
+      Number(deadline)
+    ]);
+
+    await escrow.connect(buyer).reportFiatPayment(1);
+
+    expect((await escrow.getDeal(1)).status).to.equal(2); // PaymentReported
+  });
+
+  it("keeps separate deals isolated during disputes and settlement", async function () {
+    await createDeal(); // deal 1
+    await createDeal(); // deal 2
+
+    await escrow.connect(buyer).reportFiatPayment(1);
+    await escrow.connect(seller).raiseDispute(2);
+    await escrow.connect(moderator).resolveDispute(2, false);
+
+    const first = await escrow.getDeal(1);
+    const second = await escrow.getDeal(2);
+
+    expect(first.status).to.equal(2);  // PaymentReported
+    expect(first.amount).to.equal(amount);
+    expect(second.status).to.equal(5); // Refunded
+    expect(second.amount).to.equal(0n);
+
+    expect(
+      await token.balanceOf(await escrow.getAddress())
+    ).to.equal(amount);
+  });
+
 });
