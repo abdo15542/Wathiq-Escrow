@@ -32,9 +32,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            api/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install contract dependencies
         run: npm ci --no-audit --no-fund
@@ -50,6 +48,14 @@ jobs:
 
       - name: Test API
         run: npm run test:api
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check api/src/app.js
+          node --check api/src/server.js
+          node --check web/app.js
+          node --check web/escrow.js
+          node --check web/build.js
 
       - name: Build web assets
         run: npm run build:web
