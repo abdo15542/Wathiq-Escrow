@@ -123,6 +123,24 @@ test('applies a per-client create rate limit after validation', async t => {
   assert.equal((await sendOffer(base, token, validOffer('Third offer'))).status, 201);
 });
 
+test('rate limits offers by the client IP behind the trusted Render proxy', async t => {
+  const base = await withServer(t, createApp({ maxCreatesPerMinute: 1 }));
+  const token = await register(base);
+  const createFrom = (ip, title) => fetch(base + '/api/offers', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: 'Bearer ' + token,
+      'x-forwarded-for': ip,
+    },
+    body: JSON.stringify(validOffer(title)),
+  });
+
+  assert.equal((await createFrom('198.51.100.10', 'First from A')).status, 201);
+  assert.equal((await createFrom('198.51.100.10', 'Second from A')).status, 429);
+  assert.equal((await createFrom('198.51.100.11', 'First from B')).status, 201);
+});
+
 test('only the owner can close an offer', async t => {
   const base = await withServer(t, createApp());
   const owner = await register(base, 'owner@example.com');
