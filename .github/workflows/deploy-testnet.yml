@@ -1,0 +1,74 @@
+name: Deploy Wathiq to BSC Testnet
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-testnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Require testnet deployment key
+        env:
+          DEPLOYER_PRIVATE_KEY: \${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          if [ -z "$DEPLOYER_PRIVATE_KEY" ]; then
+            echo "::error::Add DEPLOYER_PRIVATE_KEY as a GitHub Actions secret. Use a wallet holding test BNB only."
+            exit 1
+          fi
+
+      - name: Install dependencies and verify tests
+        run: |
+          npm ci --no-audit --no-fund
+          npm run compile
+          npm test
+
+      - name: Deploy test-only token
+        env:
+          DEPLOYER_PRIVATE_KEY: \${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          BSC_TESTNET_RPC_URL: \${{ vars.BSC_TESTNET_RPC_URL }}
+        run: |
+          npm run deploy:mock-usdt:testnet 2>&1 | tee mock-token.log
+          TOKEN_ADDRESS="$(awk '/TEST-ONLY MockUSDT deployed to:/ {print $NF}' mock-token.log)"
+          if [ -z "$TOKEN_ADDRESS" ]; then
+            echo "::error::Could not read the mock token address from deployment output."
+            exit 1
+          fi
+          echo "WATHIQ_TEST_TOKEN_ADDRESS=$TOKEN_ADDRESS" >> "$GITHUB_ENV"
+          echo "MOCK_TOKEN_ADDRESS=$TOKEN_ADDRESS" >> "$GITHUB_ENV"
+
+      - name: Deploy ERC-20 escrow contract
+        env:
+          DEPLOYER_PRIVATE_KEY: \${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          BSC_TESTNET_RPC_URL: \${{ vars.BSC_TESTNET_RPC_URL }}
+        run: |
+          npm run deploy:usdt:testnet 2>&1 | tee escrow.log
+          ESCROW_ADDRESS="$(awk '/WathiqUSDTEscrow deployed to:/ {print $NF}' escrow.log)"
+          if [ -z "$ESCROW_ADDRESS" ]; then
+            echo "::error::Could not read the escrow address from deployment output."
+            exit 1
+          fi
+          echo "ESCROW_ADDRESS=$ESCROW_ADDRESS" >> "$GITHUB_ENV"
+
+      - name: Publish deployment addresses
+        run: |
+          {
+            echo "## BNB Smart Chain Testnet deployment"
+            echo "- Test-only token: $MOCK_TOKEN_ADDRESS"
+            echo "- Wathiq ERC-20 escrow: $ESCROW_ADDRESS"
+            echo "- Explorer: https://testnet.bscscan.com/address/$ESCROW_ADDRESS"
+            echo ""
+            echo "**Mock token has no monetary value. Contract is unaudited. Do not use real funds.**"
+          } >> "$GITHUB_STEP_SUMMARY"
