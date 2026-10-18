@@ -55,10 +55,11 @@ From `mobile/` run:
 flutter pub get
 flutter analyze
 flutter test
-flutter build apk --release
+export WATHIQ_API_BASE_URL='https://YOUR-DEPLOYED-API-ORIGIN'
+flutter build apk --release --dart-define=WATHIQ_API_BASE_URL="$WATHIQ_API_BASE_URL"
 ```
 
-The GitHub Actions workflow builds `mobile/build/app/outputs/flutter-apk/app-release.apk` and publishes it as a workflow artifact only after all relevant steps succeed. No APK is claimed to exist until that workflow actually passes.
+The GitHub Actions workflow runs Flutter analysis and tests on each change. It builds and publishes `mobile/build/app/outputs/flutter-apk/app-release.apk` only when the repository variable `WATHIQ_API_BASE_URL` is configured; without a real endpoint it deliberately skips APK publication rather than distributing an app that cannot connect to a server. No APK is claimed to exist until that workflow actually passes.
 
 ## Deploy to BSC testnet (manual only)
 
