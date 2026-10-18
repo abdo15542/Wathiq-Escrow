@@ -48,6 +48,23 @@ async function loadMyOffers() {
       const state = document.createElement('small');
       state.textContent = 'الحالة: ' + offer.status;
       el.append(title, details, state);
+      if (offer.status === 'open') {
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'secondary';
+        closeButton.textContent = 'إغلاق العرض';
+        closeButton.addEventListener('click', async () => {
+          closeButton.disabled = true;
+          try {
+            await request('/api/offers/' + encodeURIComponent(offer.id) + '/close', { method: 'PATCH' });
+            await Promise.all([loadMyOffers(), loadOffers()]);
+          } catch (error) {
+            state.textContent = error.message || 'تعذر إغلاق العرض.';
+            closeButton.disabled = false;
+          }
+        });
+        el.append(closeButton);
+      }
       mineEl.append(el);
     }
     if (!data.items.length) mineEl.textContent = 'ليس لديك عروض حتى الآن.';
