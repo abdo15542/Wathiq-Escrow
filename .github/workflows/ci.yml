@@ -1,99 +1,104 @@
+
 name: Wathiq CI
 
 on:
-push:
-branches: [main, master, feature/usdt-escrow, feature/production-readiness]
-pull_request:
-workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+      - feature/usdt-escrow
+      - feature/production-readiness
+  pull_request:
+  workflow_dispatch:
 
 permissions:
-contents: read
+  contents: read
 
 concurrency:
-group: wathiq-ci-${{ github.ref }}
-cancel-in-progress: true
+  group: wathiq-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-contracts-api-web:
-runs-on: ubuntu-latest
-timeout-minutes: 20
+  contracts-api-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
 
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  - name: Set up Node.js
-    uses: actions/setup-node@v4
-    with:
-      node-version: 20
-      cache: npm
-      cache-dependency-path: |
-        package-lock.json
-        api/package-lock.json
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
 
-  - name: Install contract dependencies
-    run: npm ci --no-audit --no-fund
+      - name: Install contract dependencies
+        run: npm ci --no-audit --no-fund
 
-  - name: Compile contracts
-    run: npm run compile
+      - name: Compile contracts
+        run: npm run compile
 
-  - name: Test contracts
-    run: npm test
+      - name: Test contracts
+        run: npm test
 
-  - name: Install API dependencies
-    run: npm ci --prefix api --no-audit --no-fund
+      - name: Install API dependencies
+        run: npm ci --prefix api --no-audit --no-fund
 
-  - name: Test API
-    run: npm run test:api
+      - name: Test API
+        run: npm run test:api
 
-  - name: Build web assets
-    run: npm run build:web
+      - name: Build web assets
+        run: npm run build:web
 
-  - name: Upload web bundle
-    uses: actions/upload-artifact@v4
-    with:
-      name: wathiq-web-dist
-      path: web/dist/
-      if-no-files-found: error
+      - name: Upload web bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: wathiq-web-dist
+          path: web/dist/
+          if-no-files-found: error
 
-android-apk:
-runs-on: ubuntu-latest
-timeout-minutes: 30
+  android-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  - name: Set up Flutter
-    uses: subosito/flutter-action@v2
-    with:
-      flutter-version: '3.24.5'
-      channel: stable
-      cache: true
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
 
-  - name: Generate Android platform scaffolding
-    working-directory: mobile
-    run: flutter create --platforms=android --project-name wathiq_mobile .
+      - name: Generate Android platform scaffolding
+        working-directory: mobile
+        run: flutter create --platforms=android --project-name wathiq_mobile .
 
-  - name: Resolve Flutter dependencies
-    working-directory: mobile
-    run: flutter pub get
+      - name: Resolve Flutter dependencies
+        working-directory: mobile
+        run: flutter pub get
 
-  - name: Analyze Flutter source
-    working-directory: mobile
-    run: flutter analyze
+      - name: Analyze Flutter source
+        working-directory: mobile
+        run: flutter analyze
 
-  - name: Test Flutter app
-    working-directory: mobile
-    run: flutter test --reporter expanded
+      - name: Test Flutter app
+        working-directory: mobile
+        run: flutter test --reporter expanded
 
-  - name: Build release APK
-    working-directory: mobile
-    run: flutter build apk --release
+      - name: Build release APK
+        working-directory: mobile
+        run: flutter build apk --release
 
-  - name: Upload Android APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: wathiq-android-apk
-      path: mobile/build/app/outputs/flutter-apk/app-release.apk
-      if-no-files-found: error
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wathiq-android-apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
