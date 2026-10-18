@@ -19,4 +19,17 @@ void main() {
 
     expect(warning, findsOneWidget);
   });
+
+  test('fails clearly when release API URL is not configured', () async {
+    await expectLater(
+      WathiqApi.request('GET', '/health'),
+      throwsA(
+        isA<Exception>().having(
+          (error) => error.toString(),
+          'message',
+          contains('لم يتم ضبط عنوان خادم واثق'),
+        ),
+      ),
+    );
+  });
 }
