@@ -1,14 +1,14 @@
 # Wathiq Escrow — واثق
 
-A development monorepo for a BNB Smart Chain P2P escrow product. **This repository is an MVP foundation, not a production-ready financial service.** Do not use mainnet funds until independent security and legal reviews, complete integration tests, and an operational dispute process are in place.
+A development monorepo for Wathiq Escrow. **This repository is still under development and is not a production-ready financial service.** Do not use mainnet funds until independent security and legal reviews, complete integration tests, and an operational dispute process are in place.
 
 ## Components
 
 - `contracts/WathiqEscrow.sol`: native-BNB escrow with one vote per participant and 2-of-3 matching decisions (buyer, seller, arbiter). Settled funds are credited to `pendingWithdrawals` and claimed separately (pull payments), so a recipient contract cannot block the vote/settlement transaction by rejecting BNB.
 - `test/`: Hardhat tests for participant validation, conflicting votes, settlement, pull withdrawals and inactive deals.
-- `api/`: Express development API for offer drafts, pagination, filtering, retrieval, validation, security headers, configurable CORS and a basic in-memory create rate limit. **Data is in memory and disappears on restart. This is not production persistence or identity/authentication.**
+- `api/`: Express API with email/password registration and login, scrypt password hashing, signed bearer tokens, owner-protected offer closure, input validation, basic per-IP throttles, and PostgreSQL persistence when `DATABASE_URL` is configured. In development without a database it uses in-memory data only. Production startup refuses to run without PostgreSQL and a `JWT_SECRET` of at least 32 characters. This is not yet a complete escrow backend.
 - `web/`: responsive Arabic-first public site and admin-preview page. The admin page is a visual preview only, not an authenticated admin console. Wallet detection does not imply contract integration.
-- `mobile/`: Flutter Android starter app. It is not yet connected to the API or deployed contract.
+- `mobile/`: Flutter Android client with account registration/login, encrypted platform secure storage for the session token, public offer browsing, and authenticated offer creation. It still does not create or settle blockchain escrow deals.
 - `.github/workflows/ci.yml`: CI checks for the contract, API, static web bundle, and Flutter Android build; the APK is uploaded as a workflow artifact only when the build succeeds.
 
 ## Networks
@@ -32,6 +32,14 @@ npm --prefix api start
 The web preview expects the API at `http://localhost:4000` and can be served from `web/dist` on port `4173` (or another static server). Set `window.WATHIQ_API` before `app.js` if the API URL differs. Set `CORS_ORIGIN` to the exact deployed site origin for a deployment.
 
 Contract tests use Hardhat's local EVM. A passing local test suite does **not** prove a live BSC deployment or audit has passed.
+
+## API accounts and persistence
+
+- `POST /api/auth/register` accepts `{ "email", "displayName", "password" }`; passwords must be at least 10 characters.
+- `POST /api/auth/login` returns a signed bearer token; send it as `Authorization: Bearer <token>`.
+- `GET /api/auth/me` returns the current account; `POST /api/offers` requires authentication; `PATCH /api/offers/:id/close` only permits the offer owner to close it.
+- Configure `DATABASE_URL` to a managed PostgreSQL database and `JWT_SECRET` to a random secret of at least 32 characters in the deployment environment. Do not commit either secret. Production API startup intentionally fails if either is missing.
+- The current rate limits are per-process memory limits, not distributed limits; add a gateway or shared limiter before a public production launch.
 
 ## Android APK
 
