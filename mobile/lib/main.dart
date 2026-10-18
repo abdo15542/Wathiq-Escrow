@@ -83,7 +83,7 @@ class WathiqApi {
     final isRegister = displayName != null;
     final data = await request('POST', isRegister ? '/api/auth/register' : '/api/auth/login', body: {
       'email': email.trim(), 'password': password,
-      if (isRegister) 'displayName': displayName!.trim(),
+      if (isRegister) 'displayName': displayName.trim(),
     });
     final newToken = data['token'];
     if (newToken is! String || newToken.isEmpty) throw Exception('لم يُرجع الخادم رمز جلسة صالحًا.');
