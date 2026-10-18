@@ -22,7 +22,7 @@ jobs:
 
       - name: Require testnet deployment key
         env:
-          DEPLOYER_PRIVATE_KEY: \${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
         run: |
           if [ -z "$DEPLOYER_PRIVATE_KEY" ]; then
             echo "::error::Add DEPLOYER_PRIVATE_KEY as a GitHub Actions secret. Use a wallet holding test BNB only."
@@ -37,8 +37,8 @@ jobs:
 
       - name: Deploy test-only token
         env:
-          DEPLOYER_PRIVATE_KEY: \${{ secrets.DEPLOYER_PRIVATE_KEY }}
-          BSC_TESTNET_RPC_URL: \${{ vars.BSC_TESTNET_RPC_URL }}
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          BSC_TESTNET_RPC_URL: ${{ vars.BSC_TESTNET_RPC_URL }}
         run: |
           npm run deploy:mock-usdt:testnet 2>&1 | tee mock-token.log
           TOKEN_ADDRESS="$(awk '/TEST-ONLY MockUSDT deployed to:/ {print $NF}' mock-token.log)"
@@ -51,8 +51,8 @@ jobs:
 
       - name: Deploy ERC-20 escrow contract
         env:
-          DEPLOYER_PRIVATE_KEY: \${{ secrets.DEPLOYER_PRIVATE_KEY }}
-          BSC_TESTNET_RPC_URL: \${{ vars.BSC_TESTNET_RPC_URL }}
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          BSC_TESTNET_RPC_URL: ${{ vars.BSC_TESTNET_RPC_URL }}
         run: |
           npm run deploy:usdt:testnet 2>&1 | tee escrow.log
           ESCROW_ADDRESS="$(awk '/WathiqUSDTEscrow deployed to:/ {print $NF}' escrow.log)"
