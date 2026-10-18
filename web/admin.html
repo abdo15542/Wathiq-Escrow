@@ -35,7 +35,7 @@
 <script>
 (() => {
   const cfg = window.WATHIQ_CONFIG || {};
-  const api = String(cfg.apiBaseUrl || '').replace(/\\/+$/, '');
+  const api = String(cfg.apiBaseUrl || '').replace(/\/+$/, '');
   const $ = id => document.getElementById(id);
   const message = (text, danger=false) => { $('adminMessage').textContent = text; $('adminMessage').classList.toggle('admin-danger', danger); };
   let token = sessionStorage.getItem('wathiq_admin_token') || '';
