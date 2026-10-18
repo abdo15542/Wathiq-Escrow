@@ -35,6 +35,9 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: Validate Render Blueprint YAML syntax
+        run: ruby -e "require 'yaml'; YAML.load_file('render.yaml'); puts 'render.yaml syntax OK'"
+
       - name: Install contract dependencies
         run: npm ci --no-audit --no-fund
 
