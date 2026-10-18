@@ -54,6 +54,7 @@ jobs:
         run: |
           node --check api/src/app.js
           node --check api/src/server.js
+          node --check api/scripts/promote-admin.js
           node --check web/app.js
           node --check web/escrow.js
           node --check web/build.js
