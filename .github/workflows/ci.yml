@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - master
+      - fix/mobile-api-production-config
       - feature/usdt-escrow
       - feature/production-readiness
   pull_request:
