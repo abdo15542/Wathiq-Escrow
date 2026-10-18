@@ -78,7 +78,11 @@ jobs:
 
       - name: Generate Android platform scaffolding
         working-directory: mobile
-        run: flutter create --platforms=android --project-name wathiq_mobile .
+        run: flutter create --platforms=android --org ly.wathiq --project-name escrow .
+
+      - name: Set Android application label
+        working-directory: mobile
+        run: sed -i 's/android:label="escrow"/android:label="واثق | Wathiq Escrow"/' android/app/src/main/AndroidManifest.xml
 
       - name: Resolve Flutter dependencies
         working-directory: mobile
