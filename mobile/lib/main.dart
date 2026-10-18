@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 
 const String apiBaseUrl = String.fromEnvironment(
   'WATHIQ_API_BASE_URL',
-  defaultValue: 'http://10.0.2.2:4000',
+  defaultValue: '',
 );
 
 void main() => runApp(const WathiqApp());
@@ -70,6 +70,12 @@ class WathiqApi {
     String path, {
     Map<String, dynamic>? body,
   }) async {
+    if (apiBaseUrl.trim().isEmpty) {
+      throw Exception(
+        'لم يتم ضبط عنوان خادم واثق لهذا الإصدار. يلزم نشر الخادم أولًا ثم بناء التطبيق بعنوان API الصحيح.',
+      );
+    }
+
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 8);
 
