@@ -9,7 +9,8 @@
     "deploy:testnet": "hardhat run scripts/deploy.js --network bscTestnet",
     "test:api": "npm --prefix api test",
     "build:web": "npm --prefix web run build",
-    "deploy:usdt:testnet": "hardhat run scripts/deploy-usdt-testnet.js --network bscTestnet"
+    "deploy:usdt:testnet": "hardhat run scripts/deploy-usdt-testnet.js --network bscTestnet",
+    "deploy:mock-usdt:testnet": "hardhat run scripts/deploy-mock-usdt-testnet.js --network bscTestnet"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
