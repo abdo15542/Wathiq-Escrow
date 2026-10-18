@@ -210,3 +210,30 @@ test('returns 413 for request bodies larger than the configured limit', async t 
   assert.equal(response.status, 413);
   assert.match((await response.json()).error, /too large/i);
 });
+
+test('authenticated users can list only their own offers, including closed offers', async t => {
+  const base = await withServer(t, createApp());
+  const ownerToken = await register(base, 'owner-list@example.com');
+  const otherToken = await register(base, 'other-list@example.com');
+  const own = await sendOffer(base, ownerToken, validOffer('My offer'));
+  const other = await sendOffer(base, otherToken, validOffer('Other offer'));
+  assert.equal(own.status, 201);
+  assert.equal(other.status, 201);
+  const ownId = (await own.json()).item.id;
+  assert.equal((await fetch(base + '/api/offers/' + ownId + '/close', {
+    method: 'PATCH', headers: { authorization: 'Bearer ' + ownerToken },
+  })).status, 200);
+
+  const unauthorized = await fetch(base + '/api/my/offers');
+  assert.equal(unauthorized.status, 401);
+  const response = await fetch(base + '/api/my/offers?limit=10', {
+    headers: { authorization: 'Bearer ' + ownerToken },
+  });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.total, 1);
+  assert.equal(data.items[0].title, 'My offer');
+  assert.equal(data.items[0].status, 'closed');
+  assert.equal(data.items[0].ownerId, 1);
+});
+
