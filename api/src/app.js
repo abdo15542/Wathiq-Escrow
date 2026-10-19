@@ -35,8 +35,12 @@ function verifyToken(token, secret, nowSeconds = Math.floor(Date.now() / 1000)) 
   try { actual = Buffer.from(parts[2], 'base64url'); } catch { return null; }
   if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return null;
   try {
+    const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    // This API only issues HS256 tokens; reject any other declared algorithm.
+    if (!header || header.alg !== 'HS256' || header.typ !== 'JWT') return null;
     const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-    if (!Number.isInteger(payload.sub) || !Number.isInteger(payload.exp) || payload.exp <= nowSeconds) return null;
+    if (!Number.isSafeInteger(payload.sub) || payload.sub <= 0 ||
+        !Number.isSafeInteger(payload.exp) || payload.exp <= nowSeconds) return null;
     return payload;
   } catch { return null; }
 }
