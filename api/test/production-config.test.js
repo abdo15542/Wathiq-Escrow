@@ -83,6 +83,12 @@ test('authentication rejects a correctly signed token that declares an unexpecte
   });
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { error: 'authentication required' });
+
+  const oversized = await fetch(base + '/api/auth/me', {
+    headers: { authorization: 'Bearer ' + 'a'.repeat(9000) },
+  });
+  assert.equal(oversized.status, 401);
+  assert.deepEqual(await oversized.json(), { error: 'authentication required' });
 });
 
 test('PostgreSQL connections verify TLS certificates by default', () => {
