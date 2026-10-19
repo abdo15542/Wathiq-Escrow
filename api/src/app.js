@@ -9,6 +9,14 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 function b64url(value) { return Buffer.from(value).toString('base64url'); }
+
+// Keep pagination offsets bounded and predictable for both PostgreSQL and memory mode.
+function parseOffset(value) {
+  if (value === undefined || value === null || value === '') return 0;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.min(Math.floor(parsed), 1_000_000);
+}
 function signToken(payload, secret) {
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = b64url(JSON.stringify(payload));
@@ -227,7 +235,7 @@ function createApp(options = {}) {
   app.get('/api/admin/users', authenticate, requireAdmin, async (req, res, next) => {
     try {
       const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
-      const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+      const offset = parseOffset(req.query.offset);
       if (pool) {
         const [count, result] = await Promise.all([
           pool.query('SELECT COUNT(*)::int AS total FROM wathiq_users'),
@@ -245,7 +253,7 @@ function createApp(options = {}) {
       const status = typeof req.query.status === 'string' ? req.query.status : 'all';
       if (!['all', 'open', 'closed'].includes(status)) return res.status(400).json({ error: 'status must be all, open, or closed' });
       const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
-      const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+      const offset = parseOffset(req.query.offset);
       if (pool) {
         const where = status === 'all' ? '' : ' WHERE status = $1';
         const countParams = status === 'all' ? [] : [status];
@@ -293,7 +301,7 @@ function createApp(options = {}) {
   app.get('/api/offers', async (req, res, next) => {
     try {
       const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
-      const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+      const offset = parseOffset(req.query.offset);
       const asset = typeof req.query.asset === 'string' ? req.query.asset.toUpperCase() : null;
       if (asset && !ALLOWED_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset' });
       const result = await listOffers({ limit, offset, asset });
@@ -354,7 +362,7 @@ function createApp(options = {}) {
   app.get('/api/my/offers', authenticate, async (req, res, next) => {
     try {
       const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
-      const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+      const offset = parseOffset(req.query.offset);
       if (pool) {
         const [count, result] = await Promise.all([
           pool.query('SELECT COUNT(*)::int AS total FROM wathiq_offers WHERE owner_id = $1', [req.auth.userId]),

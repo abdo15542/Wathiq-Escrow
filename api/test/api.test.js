@@ -288,3 +288,16 @@ test('limits authentication attempts per client and resets after the window', as
   clock += 15 * 60_000 + 1;
   assert.equal((await attempt()).status, 401);
 });
+
+
+test('pagination offsets are normalized and capped to protect database queries', async t => {
+  const base = await withServer(t, createApp());
+  const response = await fetch(base + '/api/offers?offset=999999999999999999999999999999999999');
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.offset, 1000000);
+
+  const malformed = await fetch(base + '/api/offers?offset=not-a-number');
+  assert.equal(malformed.status, 200);
+  assert.equal((await malformed.json()).offset, 0);
+});
