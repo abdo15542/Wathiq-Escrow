@@ -73,6 +73,10 @@ test('PostgreSQL connections verify TLS certificates by default', () => {
   assert.deepEqual(options.ssl, { rejectUnauthorized: true });
   assert.equal(options.max, 8);
   assert.equal(options.connectionTimeoutMillis, 10000);
+  assert.equal(options.statement_timeout, 10000);
+  assert.equal(options.query_timeout, 12000);
+  assert.equal(options.idle_in_transaction_session_timeout, 15000);
+  assert.equal(options.application_name, 'wathiq-api');
 });
 
 test('PostgreSQL TLS can only be disabled with an explicit setting and pool size is bounded', () => {

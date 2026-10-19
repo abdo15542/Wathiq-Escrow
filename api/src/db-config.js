@@ -15,6 +15,12 @@ function createPoolOptions(env = process.env) {
     max,
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
+    // Bound slow queries and abandoned transactions so a stalled DB cannot
+    // indefinitely occupy an API worker or a pool connection.
+    statement_timeout: 10000,
+    query_timeout: 12000,
+    idle_in_transaction_session_timeout: 15000,
+    application_name: 'wathiq-api',
   };
 }
 
