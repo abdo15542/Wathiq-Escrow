@@ -2,6 +2,8 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const crypto = require('node:crypto');
+const { promisify } = require('node:util');
+const scrypt = promisify(crypto.scrypt);
 
 const ALLOWED_ASSETS = new Set(['BNB']);
 const ALLOWED_PAYMENT_METHODS = new Set(['bank_transfer', 'cash', 'crypto', 'digital_service', 'gift_card']);
@@ -38,14 +40,16 @@ function verifyToken(token, secret, nowSeconds = Math.floor(Date.now() / 1000)) 
     return payload;
   } catch { return null; }
 }
-function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
-  return { salt, hash: crypto.scryptSync(password, salt, 64).toString('hex') };
+async function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  const derivedKey = await scrypt(password, salt, 64);
+  return { salt, hash: derivedKey.toString('hex') };
 }
-function verifyPassword(password, salt, expectedHex) {
-  const actual = crypto.scryptSync(password, salt, 64);
+async function verifyPassword(password, salt, expectedHex) {
   let expected;
   try { expected = Buffer.from(expectedHex, 'hex'); } catch { return false; }
-  return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
+  if (expected.length !== 64) return false;
+  const actual = await scrypt(password, salt, 64);
+  return crypto.timingSafeEqual(actual, expected);
 }
 
 // Keep attacker-controlled client-IP keys from growing the in-process maps forever.
@@ -106,7 +110,7 @@ function createApp(options = {}) {
     return users.find(user => user.id === id) || null;
   }
   async function createUser({ email, displayName, password }) {
-    const credentials = hashPassword(password);
+    const credentials = await hashPassword(password);
     if (pool) {
       const result = await pool.query('INSERT INTO wathiq_users (email,display_name,password_salt,password_hash) VALUES ($1,$2,$3,$4) RETURNING id,email,display_name,role,created_at', [email, displayName, credentials.salt, credentials.hash]);
       return result.rows[0];
@@ -186,7 +190,7 @@ function createApp(options = {}) {
       // Reject malformed or excessive credentials before scrypt; malformed JSON types must not become 500s.
       if (password === null || password.length > 200) return res.status(401).json({ error: 'invalid email or password' });
       const user = await findUserByEmail(email);
-      if (!user || !verifyPassword(password, user.password_salt, user.password_hash)) return res.status(401).json({ error: 'invalid email or password' });
+      if (!user || !(await verifyPassword(password, user.password_salt, user.password_hash))) return res.status(401).json({ error: 'invalid email or password' });
       const safeUser = userFromRow(user);
       const issuedAt = Math.floor(now() / 1000);
       const token = signToken({ sub: safeUser.id, role: safeUser.role, iat: issuedAt, exp: issuedAt + TOKEN_TTL_SECONDS }, tokenSecret);
