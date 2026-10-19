@@ -1,0 +1,151 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { createApp } = require('../src/app');
+
+async function withServer(t, app) {
+  const server = app.listen(0);
+  await new Promise(resolve => server.once('listening', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  return 'http://127.0.0.1:' + server.address().port;
+}
+
+async function register(base, email, displayName = 'Test User', password = 'long-password-123') {
+  return fetch(base + '/api/auth/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, displayName, password }),
+  });
+}
+
+test('registration, login, and /me return a safe user and valid bearer token', async t => {
+  const base = await withServer(t, createApp({
+    tokenSecret: 'test-secret-long-enough-for-auth-flow-tests',
+  }));
+
+  const created = await register(base, '  PERSON@example.com  ');
+  assert.equal(created.status, 201);
+  const payload = await created.json();
+  assert.equal(payload.user.email, 'person@example.com');
+  assert.equal(payload.user.displayName, 'Test User');
+  assert.equal(payload.user.role, 'user');
+  assert.equal(typeof payload.token, 'string');
+  assert.equal(payload.tokenType, 'Bearer');
+  assert.equal('password_hash' in payload.user, false);
+  assert.equal('password_salt' in payload.user, false);
+
+  const login = await fetch(base + '/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'PERSON@example.com', password: 'long-password-123' }),
+  });
+  assert.equal(login.status, 200);
+  const loggedIn = await login.json();
+  assert.equal(loggedIn.user.id, payload.user.id);
+
+  const me = await fetch(base + '/api/auth/me', {
+    headers: { authorization: 'Bearer ' + loggedIn.token },
+  });
+  assert.equal(me.status, 200);
+  assert.equal((await me.json()).user.email, 'person@example.com');
+});
+
+test('registration rejects duplicate emails and weak passwords', async t => {
+  const base = await withServer(t, createApp({
+    tokenSecret: 'test-secret-long-enough-for-auth-flow-tests',
+  }));
+  assert.equal((await register(base, 'same@example.com')).status, 201);
+  assert.equal((await register(base, 'SAME@example.com')).status, 409);
+  assert.equal((await register(base, 'other@example.com', 'Valid Name', 'short')).status, 400);
+});
+
+test('login safely rejects malformed credentials and incorrect passwords', async t => {
+  const base = await withServer(t, createApp({
+    tokenSecret: 'test-secret-long-enough-for-auth-flow-tests',
+  }));
+  await register(base, 'login@example.com');
+  for (const body of [
+    { email: 'login@example.com', password: 'wrong-password' },
+    { email: 'login@example.com', password: 123 },
+    { email: 'login@example.com', password: 'x'.repeat(201) },
+  ]) {
+    const response = await fetch(base + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: 'invalid email or password' });
+  }
+});
+
+test('offers require authentication and owners cannot close another account\'s offer', async t => {
+  const base = await withServer(t, createApp({
+    tokenSecret: 'test-secret-long-enough-for-auth-flow-tests',
+  }));
+  const first = await (await register(base, 'first@example.com', 'First User')).json();
+  const second = await (await register(base, 'second@example.com', 'Second User')).json();
+
+  const anonymousCreate = await fetch(base + '/api/offers', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Offer title', asset: 'BNB', price: 2, paymentMethod: 'cash' }),
+  });
+  assert.equal(anonymousCreate.status, 401);
+
+  const created = await fetch(base + '/api/offers', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: 'Bearer ' + first.token,
+    },
+    body: JSON.stringify({ title: 'Offer title', asset: 'BNB', price: 2, paymentMethod: 'cash' }),
+  });
+  assert.equal(created.status, 201);
+  const offer = (await created.json()).item;
+  assert.equal(offer.ownerId, first.user.id);
+
+  const forbiddenClose = await fetch(base + '/api/offers/' + offer.id + '/close', {
+    method: 'PATCH',
+    headers: { authorization: 'Bearer ' + second.token },
+  });
+  assert.equal(forbiddenClose.status, 404);
+
+  const ownerClose = await fetch(base + '/api/offers/' + offer.id + '/close', {
+    method: 'PATCH',
+    headers: { authorization: 'Bearer ' + first.token },
+  });
+  assert.equal(ownerClose.status, 200);
+
+  const mine = await fetch(base + '/api/my/offers', {
+    headers: { authorization: 'Bearer ' + first.token },
+  });
+  const minePayload = await mine.json();
+  assert.equal(minePayload.total, 1);
+  assert.equal(minePayload.items[0].status, 'closed');
+});
+
+test('admin authorization is read from the account record, not trusted from the token role', async t => {
+  const users = [{
+    id: 1,
+    email: 'user@example.com',
+    display_name: 'Normal User',
+    role: 'user',
+    password_salt: 'not-used',
+    password_hash: 'not-used',
+    created_at: new Date().toISOString(),
+  }];
+  const { signToken } = require('../src/app');
+  const secret = 'test-secret-long-enough-for-auth-flow-tests';
+  const token = signToken({
+    sub: 1,
+    role: 'admin',
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }, secret);
+  const base = await withServer(t, createApp({ users, tokenSecret: secret }));
+  const response = await fetch(base + '/api/admin/overview', {
+    headers: { authorization: 'Bearer ' + token },
+  });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: 'administrator access required' });
+});
