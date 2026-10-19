@@ -246,3 +246,27 @@ test('authenticated users can list only their own offers, including closed offer
   assert.equal(data.items[0].ownerId, 1);
 });
 
+
+test('rejects tampered and expired bearer tokens', async t => {
+  let clock = Date.UTC(2026, 0, 1, 0, 0, 0);
+  const base = await withServer(t, createApp({ now: () => clock }));
+  const token = await register(base, 'token-lifecycle@example.com');
+
+  const valid = await fetch(base + '/api/auth/me', {
+    headers: { authorization: 'Bearer ' + token },
+  });
+  assert.equal(valid.status, 200);
+
+  const parts = token.split('.');
+  parts[1] = Buffer.from(JSON.stringify({ sub: 999, role: 'admin', iat: 1, exp: 9999999999 })).toString('base64url');
+  const tampered = await fetch(base + '/api/auth/me', {
+    headers: { authorization: 'Bearer ' + parts.join('.') },
+  });
+  assert.equal(tampered.status, 401);
+
+  clock += 8 * 24 * 60 * 60 * 1000;
+  const expired = await fetch(base + '/api/auth/me', {
+    headers: { authorization: 'Bearer ' + token },
+  });
+  assert.equal(expired.status, 401);
+});
