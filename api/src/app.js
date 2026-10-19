@@ -12,6 +12,16 @@ const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 function b64url(value) { return Buffer.from(value).toString('base64url'); }
 
+// Match PostgreSQL NUMERIC(30, 10) precision in both database and memory mode.
+// Counting from the canonical number string also handles scientific notation.
+function hasAtMostDecimalPlaces(value, places) {
+  const text = String(value).toLowerCase();
+  const [coefficient, exponentText] = text.split('e');
+  const fractionLength = (coefficient.split('.')[1] || '').length;
+  const exponent = exponentText === undefined ? 0 : Number(exponentText);
+  return Math.max(0, fractionLength - exponent) <= places;
+}
+
 // Keep pagination offsets bounded and predictable for both PostgreSQL and memory mode.
 function parseOffset(value) {
   if (value === undefined || value === null || value === '') return 0;
@@ -346,6 +356,7 @@ function createApp(options = {}) {
       if (title.length < 3 || title.length > 100) return res.status(400).json({ error: 'title must be 3-100 characters' });
       if (!ALLOWED_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset; MVP supports BNB only' });
       if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0 || price > 1_000_000_000) return res.status(400).json({ error: 'price must be a positive finite number within supported limits' });
+      if (!hasAtMostDecimalPlaces(price, 10)) return res.status(400).json({ error: 'price supports at most 10 decimal places' });
       if (!ALLOWED_PAYMENT_METHODS.has(paymentMethod)) return res.status(400).json({ error: 'unsupported paymentMethod' });
       const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
       const current = now();
