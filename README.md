@@ -41,7 +41,7 @@ Contract tests use Hardhat's local EVM. A passing local test suite does **not** 
 - `GET /api/auth/me` returns the current account; `POST /api/offers` requires authentication; `GET /api/my/offers` lists only the signed-in account's offers (including closed offers); `PATCH /api/offers/:id/close` only permits the offer owner to close it.
 - Admin API: `/api/admin/overview`, `/api/admin/users`, `/api/admin/offers`, and `PATCH /api/admin/offers/:id/close` require a database-backed `admin` role. The dashboard is at `/admin.html`.
 - To grant admin rights to an already registered account, run `DATABASE_URL=... npm --prefix api run admin:promote -- admin@example.com` from a trusted one-off shell with the production database URL provided securely. Never paste the database URL into chat or commit it. This command updates only an existing account; no public endpoint can grant admin rights.
-- Configure `DATABASE_URL` to a managed PostgreSQL database and `JWT_SECRET` to a random secret of at least 32 characters in the deployment environment. Do not commit either secret. Production API startup intentionally fails if either is missing.
+- Configure `DATABASE_URL` to a managed PostgreSQL database and `JWT_SECRET` to a random secret of at least 32 characters in the deployment environment. Do not commit either secret. PostgreSQL connections verify TLS certificates by default; production startup refuses `PGSSLMODE=disable`. Pool size is bounded to 1–100 connections (default 10). Production API startup intentionally fails if either database or signing secret is missing.
 - The current rate limits are per-process memory limits, not distributed limits; add a gateway or shared limiter before a public production launch.
 
 
