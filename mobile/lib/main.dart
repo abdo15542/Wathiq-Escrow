@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -10,6 +11,15 @@ const String apiBaseUrl = String.fromEnvironment(
   'WATHIQ_API_BASE_URL',
   defaultValue: '',
 );
+
+// Release builds must never send bearer tokens over clear-text HTTP.
+bool isApiUriAllowed(Uri uri, {required bool releaseMode}) {
+  if (uri.host.isEmpty || uri.userInfo.isNotEmpty) return false;
+  if (releaseMode) return uri.scheme == 'https';
+  if (uri.scheme == 'https') return true;
+  return uri.scheme == 'http' &&
+      const {'localhost', '127.0.0.1', '10.0.2.2'}.contains(uri.host);
+}
 
 void main() => runApp(const WathiqApp());
 
@@ -113,6 +123,11 @@ class WathiqApi {
 
     try {
       final uri = Uri.parse(apiBaseUrl).resolve(path);
+      if (!isApiUriAllowed(uri, releaseMode: kReleaseMode)) {
+        throw Exception(
+          'عنوان API غير آمن. استخدم HTTPS في نسخة الإصدار، أو عنوانًا محليًا أثناء التطوير.',
+        );
+      }
 
       final request = await client
           .openUrl(method, uri)
