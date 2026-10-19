@@ -1,4 +1,7 @@
 function createPoolOptions(env = process.env) {
+  if (env.NODE_ENV === 'production' && env.PGSSLMODE === 'disable') {
+    throw new Error('PostgreSQL TLS cannot be disabled in production.');
+  }
   const configuredMax = Number(env.PGPOOL_MAX);
   const max = Number.isInteger(configuredMax) && configuredMax >= 1 && configuredMax <= 100
     ? configuredMax
