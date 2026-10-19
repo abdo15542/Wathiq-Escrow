@@ -77,6 +77,7 @@ test('PostgreSQL connections verify TLS certificates by default', () => {
 
 test('PostgreSQL TLS can only be disabled with an explicit setting and pool size is bounded', () => {
   assert.equal(createPoolOptions({ PGSSLMODE: 'disable' }).ssl, false);
+  assert.throws(() => createPoolOptions({ NODE_ENV: 'production', PGSSLMODE: 'disable' }), /cannot be disabled in production/);
   assert.equal(createPoolOptions({ PGPOOL_MAX: '0' }).max, 10);
   assert.equal(createPoolOptions({ PGPOOL_MAX: '999' }).max, 10);
   assert.equal(createPoolOptions({ PGPOOL_MAX: 'not-a-number' }).max, 10);
