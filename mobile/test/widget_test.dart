@@ -20,6 +20,30 @@ void main() {
     expect(warning, findsOneWidget);
   });
 
+
+  test('API URL policy permits HTTPS and local development only', () {
+    expect(
+      isApiUriAllowed(Uri.parse('https://api.example.com/api/health'), releaseMode: true),
+      isTrue,
+    );
+    expect(
+      isApiUriAllowed(Uri.parse('http://api.example.com/api/health'), releaseMode: true),
+      isFalse,
+    );
+    expect(
+      isApiUriAllowed(Uri.parse('http://10.0.2.2:4000/health'), releaseMode: false),
+      isTrue,
+    );
+    expect(
+      isApiUriAllowed(Uri.parse('http://api.example.com/health'), releaseMode: false),
+      isFalse,
+    );
+    expect(
+      isApiUriAllowed(Uri.parse('https://user:secret@api.example.com/health'), releaseMode: false),
+      isFalse,
+    );
+  });
+
   test('fails clearly when release API URL is not configured', () async {
     await expectLater(
       WathiqApi.request('GET', '/health'),
