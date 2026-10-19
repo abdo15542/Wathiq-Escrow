@@ -90,7 +90,13 @@ test('authentication rejects a correctly signed token that declares an unexpecte
   assert.equal(oversized.status, 401);
   assert.deepEqual(await oversized.json(), { error: 'authentication required' });
 
-  const validParts = token.split('.');
+  const { signToken } = require('../src/app');
+  const validToken = signToken({
+    sub: 1,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }, secret);
+  const validParts = validToken.split('.');
   const nonCanonicalSignature = await fetch(base + '/api/auth/me', {
     headers: { authorization: 'Bearer ' + validParts[0] + '.' + validParts[1] + '.' + validParts[2] + '!' },
   });
