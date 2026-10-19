@@ -92,13 +92,25 @@ test('offers require authentication and owners cannot close another account\'s o
   });
   assert.equal(anonymousCreate.status, 401);
 
+  for (const invalidPrice of [0.00000000001, 1.123456789012, 0, -1, '2']) {
+    const invalid = await fetch(base + '/api/offers', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer ' + first.token,
+      },
+      body: JSON.stringify({ title: 'Offer title', asset: 'BNB', price: invalidPrice, paymentMethod: 'cash' }),
+    });
+    assert.equal(invalid.status, 400);
+  }
+
   const created = await fetch(base + '/api/offers', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       authorization: 'Bearer ' + first.token,
     },
-    body: JSON.stringify({ title: 'Offer title', asset: 'BNB', price: 2, paymentMethod: 'cash' }),
+    body: JSON.stringify({ title: 'Offer title', asset: 'BNB', price: 2.123456789, paymentMethod: 'cash' }),
   });
   assert.equal(created.status, 201);
   const offer = (await created.json()).item;
