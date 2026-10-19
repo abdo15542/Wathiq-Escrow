@@ -34,6 +34,9 @@
   }
   function requireConfig() {
     if (!window.ethers) throw new Error('تعذر تحميل مكتبة المحفظة. تحقق من اتصال الإنترنت ثم أعد المحاولة.');
+    // Hard safety lock: this UI is not approved for mainnet or real-value tokens.
+    // Even if deployment variables are misconfigured, never initiate a mainnet transaction.
+    if (Number(cfg.chainId || 97) !== 97) throw new Error('قفل أمان: هذا الإصدار يعمل على BNB Smart Chain Testnet فقط، والمعاملات على الشبكة الرئيسية معطلة.');
     if (!cfg.escrowAddress || !cfg.tokenAddress || !window.ethers.isAddress(cfg.escrowAddress) || !window.ethers.isAddress(cfg.tokenAddress)) {
       throw new Error('لم تُضبط عناوين عقد الضمان ورمز ERC-20 بعد. انشر نسخة الاختبار واضبط WATHIQ_ESCROW_ADDRESS وWATHIQ_TOKEN_ADDRESS.');
     }
@@ -67,7 +70,9 @@
     escrow = new ethers.Contract(cfg.escrowAddress, escrowAbi, signer);
     const contractToken = await escrow.token();
     if (contractToken.toLowerCase() !== cfg.tokenAddress.toLowerCase()) throw new Error('عنوان الرمز لا يطابق الرمز المثبت داخل عقد الضمان.');
-    status('تم ربط المحفظة ' + account.slice(0, 6) + '…' + account.slice(-4) + ' على شبكة الاختبار.');
+    const tokenSymbol = await token.symbol();
+    if (tokenSymbol !== 'mUSDT') throw new Error('قفل أمان: الرمز المتصل ليس mUSDT التجريبي؛ لن تُنفّذ أي معاملة.');
+    status('تم ربط المحفظة ' + account.slice(0, 6) + '…' + account.slice(-4) + ' على شبكة الاختبار باستخدام mUSDT التجريبي.');
     await refreshBalance();
   }
   async function ensureConnected() { if (!signer) await connect(); }
