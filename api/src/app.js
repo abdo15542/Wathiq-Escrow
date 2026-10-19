@@ -29,7 +29,9 @@ function verifyToken(token, secret, nowSeconds = Math.floor(Date.now() / 1000)) 
   // Bearer tokens issued here are tiny; cap input before decoding or hashing attacker data.
   if (typeof token !== 'string' || token.length > 8192) return null;
   const parts = token.split('.');
-  if (parts.length !== 3 || parts.some(part => part.length === 0)) return null;
+  // Buffer's base64url decoder is permissive and can ignore invalid characters.
+  // Require canonical URL-safe alphabet before decoding any JWT segment.
+  if (parts.length !== 3 || parts.some(part => !/^[A-Za-z0-9_-]+$/.test(part))) return null;
   const unsigned = parts[0] + '.' + parts[1];
   const expected = crypto.createHmac('sha256', secret).update(unsigned).digest();
   let actual;
