@@ -270,3 +270,21 @@ test('rejects tampered and expired bearer tokens', async t => {
   });
   assert.equal(expired.status, 401);
 });
+
+test('limits authentication attempts per client and resets after the window', async t => {
+  let clock = 10_000;
+  const base = await withServer(t, createApp({ now: () => clock }));
+  await register(base, 'rate-limit-auth@example.com');
+
+  const attempt = () => fetch(base + '/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'rate-limit-auth@example.com', password: 'wrong-password-123' }),
+  });
+
+  // Registration plus nine login attempts reaches ten attempts in the 15-minute window.
+  for (let i = 0; i < 9; i += 1) assert.equal((await attempt()).status, 401);
+  assert.equal((await attempt()).status, 429);
+  clock += 15 * 60_000 + 1;
+  assert.equal((await attempt()).status, 401);
+});
