@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createApp } = require('../src/app');
+const { createPoolOptions } = require('../src/db-config');
 
 function withEnv(values, fn) {
   const previous = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
@@ -64,4 +65,19 @@ test('API responses include security headers and malformed JSON is a client erro
   });
   assert.equal(malformed.status, 400);
   assert.deepEqual(await malformed.json(), { error: 'invalid request body' });
+});
+
+
+test('PostgreSQL connections verify TLS certificates by default', () => {
+  const options = createPoolOptions({ DATABASE_URL: 'postgres://example', PGPOOL_MAX: '8' });
+  assert.deepEqual(options.ssl, { rejectUnauthorized: true });
+  assert.equal(options.max, 8);
+  assert.equal(options.connectionTimeoutMillis, 10000);
+});
+
+test('PostgreSQL TLS can only be disabled with an explicit setting and pool size is bounded', () => {
+  assert.equal(createPoolOptions({ PGSSLMODE: 'disable' }).ssl, false);
+  assert.equal(createPoolOptions({ PGPOOL_MAX: '0' }).max, 10);
+  assert.equal(createPoolOptions({ PGPOOL_MAX: '999' }).max, 10);
+  assert.equal(createPoolOptions({ PGPOOL_MAX: 'not-a-number' }).max, 10);
 });
