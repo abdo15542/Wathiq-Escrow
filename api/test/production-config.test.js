@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const { createApp } = require('../src/app');
 const { createPoolOptions } = require('../src/db-config');
 
@@ -67,6 +68,22 @@ test('API responses include security headers and malformed JSON is a client erro
   assert.deepEqual(await malformed.json(), { error: 'invalid request body' });
 });
 
+
+test('authentication rejects a correctly signed token that declares an unexpected algorithm', async t => {
+  const secret = 'test-secret-long-enough-for-jwt-algorithm-tests';
+  const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const unsigned = encode({ alg: 'none', typ: 'JWT' }) + '.' +
+    encode({ sub: 1, exp: Math.floor(Date.now() / 1000) + 60 });
+  // Sign it with the API secret deliberately: only the header algorithm is invalid.
+  const signature = crypto.createHmac('sha256', secret).update(unsigned).digest('base64url');
+  const token = unsigned + '.' + signature;
+  const base = await withServer(t, createApp({ tokenSecret: secret }));
+  const response = await fetch(base + '/api/auth/me', {
+    headers: { authorization: 'Bearer ' + token },
+  });
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: 'authentication required' });
+});
 
 test('PostgreSQL connections verify TLS certificates by default', () => {
   const options = createPoolOptions({ DATABASE_URL: 'postgres://example', PGPOOL_MAX: '8' });
