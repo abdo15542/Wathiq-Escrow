@@ -75,7 +75,23 @@
     status('تم ربط المحفظة ' + account.slice(0, 6) + '…' + account.slice(-4) + ' على شبكة الاختبار باستخدام mUSDT التجريبي.');
     await refreshBalance();
   }
-  async function ensureConnected() { if (!signer) await connect(); }
+  async function ensureConnected() {
+    if (!signer) {
+      await connect();
+      return;
+    }
+    // Wallets can switch networks after connection. Re-check before every read/write action.
+    const network = await provider.getNetwork();
+    if (Number(network.chainId) !== 97) {
+      signer = null; account = null; token = null; escrow = null;
+      throw new Error('قفل أمان: تغيّرت الشبكة. أعد ربط المحفظة على BNB Smart Chain Testnet قبل المتابعة.');
+    }
+    const currentAccount = await signer.getAddress();
+    if (!account || currentAccount.toLowerCase() !== account.toLowerCase()) {
+      signer = null; account = null; token = null; escrow = null;
+      throw new Error('تغيّر حساب المحفظة. أعد ربط المحفظة قبل المتابعة.');
+    }
+  }
   async function mintTestTokens() {
     await ensureConnected();
     if (Number(cfg.chainId || 97) !== 97) throw new Error('إنشاء رموز الاختبار مسموح فقط على BSC Testnet.');
@@ -167,4 +183,13 @@
   bind('voteRefund', () => transact('refund', 'التصويت لاسترداد المبلغ'), 'تعذر التصويت');
   bind('refundExpired', () => transact('expire', 'استرداد الصفقة المنتهية'), 'تعذر الاسترداد');
   bind('withdrawEscrow', () => transact('withdraw', 'سحب الرصيد المستحق'), 'تعذر السحب');
+
+  if (window.ethereum && typeof window.ethereum.on === 'function') {
+    const resetWallet = message => {
+      provider = null; signer = null; account = null; token = null; escrow = null;
+      status(message, true);
+    };
+    window.ethereum.on('chainChanged', () => resetWallet('تغيّرت الشبكة؛ أعد ربط المحفظة على شبكة الاختبار.'));
+    window.ethereum.on('accountsChanged', () => resetWallet('تغيّر حساب المحفظة؛ أعد ربط المحفظة.'));
+  }
 })();
