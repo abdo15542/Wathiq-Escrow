@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 const { createApp, ensureSchema } = require('./app');
+const { createPoolOptions } = require('./db-config');
 
 async function start() {
   const production = process.env.NODE_ENV === 'production';
@@ -12,13 +13,7 @@ async function start() {
 
   let pool = null;
   if (process.env.DATABASE_URL) {
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.PGSSLMODE === 'disable' ? false : { rejectUnauthorized: false },
-      max: Number(process.env.PGPOOL_MAX || 10),
-      connectionTimeoutMillis: 10000,
-      idleTimeoutMillis: 30000,
-    });
+    pool = new Pool(createPoolOptions());
     await pool.query('SELECT 1');
     await ensureSchema(pool);
   }
