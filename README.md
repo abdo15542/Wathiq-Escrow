@@ -61,7 +61,7 @@ export WATHIQ_API_BASE_URL='https://YOUR-DEPLOYED-API-ORIGIN'
 flutter build apk --release --dart-define=WATHIQ_API_BASE_URL="$WATHIQ_API_BASE_URL"
 ```
 
-The GitHub Actions workflow runs Flutter analysis and tests on each change, then builds `mobile/build/app/outputs/flutter-apk/app-release.apk` with `https://wathiq-escrow-api.onrender.com` as the default API endpoint. Set the repository variable `WATHIQ_API_BASE_URL` only if the deployed API origin differs. The APK is published as the `wathiq-android-apk` workflow artifact when the build passes; a successful build does not by itself prove that the app's live API calls or blockchain escrow flows work end to end.
+The GitHub Actions workflow runs Flutter analysis and tests on each change. Before building a release APK, it requires the repository Actions variable `WATHIQ_API_BASE_URL` to be set to the HTTPS origin of the actually deployed API (for example, `https://wathiq-escrow-api.onrender.com` only after `/health` has been verified). If the variable is missing or not HTTPS, the release build intentionally fails rather than embedding an unverified endpoint. Add it under **Settings → Secrets and variables → Actions → Variables**. The APK is published as the `wathiq-android-apk` workflow artifact when the build passes; a successful build does not by itself prove that the app's live API calls or blockchain escrow flows work end to end.
 
 ## Deploy to BSC testnet (manual only)
 
