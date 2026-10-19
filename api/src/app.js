@@ -26,9 +26,10 @@ function signToken(payload, secret) {
   return unsigned + '.' + crypto.createHmac('sha256', secret).update(unsigned).digest('base64url');
 }
 function verifyToken(token, secret, nowSeconds = Math.floor(Date.now() / 1000)) {
-  if (typeof token !== 'string') return null;
+  // Bearer tokens issued here are tiny; cap input before decoding or hashing attacker data.
+  if (typeof token !== 'string' || token.length > 8192) return null;
   const parts = token.split('.');
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3 || parts.some(part => part.length === 0)) return null;
   const unsigned = parts[0] + '.' + parts[1];
   const expected = crypto.createHmac('sha256', secret).update(unsigned).digest();
   let actual;
