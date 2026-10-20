@@ -7,14 +7,17 @@ function createPoolOptions(env = process.env) {
     ? configuredMax
     : 10;
 
-  const ssl = env.PGSSLMODE === 'disable' ? false : {
-    // Render and some managed PostgreSQL providers use a private CA. Supply its
-    // PEM certificate explicitly rather than disabling certificate validation.
-    rejectUnauthorized: true,
-    ...(typeof env.PGSSL_CA_CERT === 'string' && env.PGSSL_CA_CERT.trim()
-      ? { ca: env.PGSSL_CA_CERT }
-      : {}),
-  };
+  const ssl = env.PGSSLMODE === 'disable'
+    ? false
+    : env.PGSSLMODE === 'require'
+      ? { rejectUnauthorized: false }
+      : {
+          // Strict verification remains the default for providers with trusted CAs.
+          rejectUnauthorized: true,
+          ...(typeof env.PGSSL_CA_CERT === 'string' && env.PGSSL_CA_CERT.trim()
+            ? { ca: env.PGSSL_CA_CERT }
+            : {}),
+        };
 
   return {
     connectionString: env.DATABASE_URL,
