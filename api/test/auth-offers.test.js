@@ -110,7 +110,7 @@ test('offers require authentication and owners cannot close another account\'s o
       'content-type': 'application/json',
       authorization: 'Bearer ' + first.token,
     },
-    body: JSON.stringify({ title: 'Offer title', asset: 'BNB', price: 2.123456789, paymentMethod: 'cash' }),
+    body: JSON.stringify({ title: 'Offer title', asset: 'BNB', price: 1.1234567891, paymentMethod: 'cash' }),
   });
   assert.equal(created.status, 201);
   const offer = (await created.json()).item;
