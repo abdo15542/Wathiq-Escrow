@@ -290,14 +290,18 @@ test('limits authentication attempts per client and resets after the window', as
 });
 
 
-test('pagination offsets are normalized and capped to protect database queries', async t => {
+test('pagination offsets reject malformed and unsafe values instead of silently normalizing them', async t => {
   const base = await withServer(t, createApp());
-  const response = await fetch(base + '/api/offers?offset=999999999999999999999999999999999999');
-  assert.equal(response.status, 200);
-  const data = await response.json();
-  assert.equal(data.offset, 1000000);
 
-  const malformed = await fetch(base + '/api/offers?offset=not-a-number');
-  assert.equal(malformed.status, 200);
-  assert.equal((await malformed.json()).offset, 0);
+  for (const offset of ['999999999999999999999999999999999999', 'not-a-number', '-1', '1.5']) {
+    const response = await fetch(base + '/api/offers?offset=' + encodeURIComponent(offset));
+    assert.equal(response.status, 400, 'invalid offset should be rejected: ' + offset);
+    assert.deepEqual(await response.json(), {
+      error: 'limit must be 1-50 and offset must be 0-1000000 integers',
+    });
+  }
+
+  const cappedBoundary = await fetch(base + '/api/offers?offset=1000000');
+  assert.equal(cappedBoundary.status, 200);
+  assert.equal((await cappedBoundary.json()).offset, 1000000);
 });
