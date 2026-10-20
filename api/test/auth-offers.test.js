@@ -171,4 +171,13 @@ test('offer route IDs reject partial, decimal, zero, and unsafe integer strings'
   }
   const missing = await fetch(base + '/api/offers/1');
   assert.equal(missing.status, 404, 'a valid positive ID should reach lookup');
+
+  const registered = await register(base, 'route-id@example.com');
+  const { token } = await registered.json();
+  const malformedClose = await fetch(base + '/api/offers/1abc/close', {
+    method: 'PATCH',
+    headers: { authorization: 'Bearer ' + token },
+  });
+  assert.equal(malformedClose.status, 400);
+  assert.deepEqual(await malformedClose.json(), { error: 'invalid offer id' });
 });
