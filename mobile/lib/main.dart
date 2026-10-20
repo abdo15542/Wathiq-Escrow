@@ -24,9 +24,20 @@ bool isApiUriAllowed(Uri uri, {required bool releaseMode}) {
 String? validateOfferPrice(String? value) {
   final raw = (value ?? '').trim();
 
-  // Keep client-side validation aligned with the API: plain decimal notation,
-  // at most 10 fractional digits, and no exponent/comma syntax.
-  if (!RegExp(r'^\\d+(?:\\.\\d{1,10})?
+  // Match the API's decimal precision and reject exponent/comma notation.
+  if (!RegExp(r'^\d+(?:\.\d{1,10})?$').hasMatch(raw)) {
+    return 'أدخل سعرًا عشريًا صحيحًا بحد أقصى 10 منازل';
+  }
+
+  final price = double.tryParse(raw);
+  if (price == null ||
+      !price.isFinite ||
+      price <= 0 ||
+      price > 1000000000) {
+    return 'أدخل سعرًا موجبًا لا يتجاوز مليارًا';
+  }
+  return null;
+}
 
 class WathiqApp extends StatelessWidget {
   const WathiqApp({super.key});
