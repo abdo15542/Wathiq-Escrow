@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../lib/main.dart';
+import 'package:wathiq_mobile/main.dart';
 
 void main() {
   group('validateOfferPrice', () {
