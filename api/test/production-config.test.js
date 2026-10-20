@@ -112,6 +112,9 @@ test('PostgreSQL connections verify TLS certificates by default and support a tr
     rejectUnauthorized: true,
     ca,
   });
+  assert.deepEqual(createPoolOptions({ PGSSLMODE: 'require' }).ssl, {
+    rejectUnauthorized: false,
+  });
   assert.equal(options.max, 8);
   assert.equal(options.connectionTimeoutMillis, 10000);
   assert.equal(options.statement_timeout, 10000);
