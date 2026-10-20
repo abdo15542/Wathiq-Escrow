@@ -7,11 +7,19 @@ function createPoolOptions(env = process.env) {
     ? configuredMax
     : 10;
 
+  const ssl = env.PGSSLMODE === 'disable' ? false : {
+    // Render and some managed PostgreSQL providers use a private CA. Supply its
+    // PEM certificate explicitly rather than disabling certificate validation.
+    rejectUnauthorized: true,
+    ...(typeof env.PGSSL_CA_CERT === 'string' && env.PGSSL_CA_CERT.trim()
+      ? { ca: env.PGSSL_CA_CERT }
+      : {}),
+  };
+
   return {
     connectionString: env.DATABASE_URL,
-    // Verify the database certificate by default. Disabling TLS is an explicit
-    // opt-out for local development only; production should keep verification on.
-    ssl: env.PGSSLMODE === 'disable' ? false : { rejectUnauthorized: true },
+    // Verify the database certificate by default. Production must not disable TLS.
+    ssl,
     max,
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
