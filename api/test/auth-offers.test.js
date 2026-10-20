@@ -161,3 +161,14 @@ test('admin authorization is read from the account record, not trusted from the 
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: 'administrator access required' });
 });
+
+test('offer route IDs reject partial, decimal, zero, and unsafe integer strings', async t => {
+  const base = await withServer(t, createApp());
+  for (const id of ['1abc', '1.5', '0', '-1', '9007199254740992']) {
+    const response = await fetch(base + '/api/offers/' + id);
+    assert.equal(response.status, 400, 'expected invalid ID rejection for ' + id);
+    assert.deepEqual(await response.json(), { error: 'invalid offer id' });
+  }
+  const missing = await fetch(base + '/api/offers/1');
+  assert.equal(missing.status, 404, 'a valid positive ID should reach lookup');
+});
