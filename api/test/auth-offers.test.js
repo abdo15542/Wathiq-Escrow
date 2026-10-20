@@ -200,3 +200,35 @@ test('offer pagination rejects malformed and out-of-range query parameters', asy
   assert.equal(payload.limit, 10);
   assert.equal(payload.offset, 0);
 });
+
+test('admin user and offer listings apply the same strict pagination bounds', async t => {
+  const { signToken } = require('../src/app');
+  const secret = 'test-secret-long-enough-for-admin-pagination';
+  const users = [{
+    id: 1,
+    email: 'admin@example.com',
+    display_name: 'Admin User',
+    role: 'admin',
+    password_salt: 'not-used',
+    password_hash: 'not-used',
+    created_at: new Date().toISOString(),
+  }];
+  const base = await withServer(t, createApp({ users, tokenSecret: secret }));
+  const token = signToken({
+    sub: 1,
+    role: 'admin',
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }, secret);
+  const headers = { authorization: 'Bearer ' + token };
+
+  for (const path of ['/api/admin/users', '/api/admin/offers']) {
+    const invalid = await fetch(base + path + '?limit=1abc', { headers });
+    assert.equal(invalid.status, 400, path + ' must reject malformed limit');
+    const valid = await fetch(base + path + '?limit=10&offset=0', { headers });
+    assert.equal(valid.status, 200, path + ' should accept valid pagination');
+    const payload = await valid.json();
+    assert.equal(payload.limit, 10);
+    assert.equal(payload.offset, 0);
+  }
+});
