@@ -104,9 +104,14 @@ test('authentication rejects a correctly signed token that declares an unexpecte
   assert.deepEqual(await nonCanonicalSignature.json(), { error: 'authentication required' });
 });
 
-test('PostgreSQL connections verify TLS certificates by default', () => {
+test('PostgreSQL connections verify TLS certificates by default and support a trusted private CA', () => {
   const options = createPoolOptions({ DATABASE_URL: 'postgres://example', PGPOOL_MAX: '8' });
   assert.deepEqual(options.ssl, { rejectUnauthorized: true });
+  const ca = '-----BEGIN CERTIFICATE-----\\ntrusted-root\\n-----END CERTIFICATE-----';
+  assert.deepEqual(createPoolOptions({ PGSSL_CA_CERT: ca }).ssl, {
+    rejectUnauthorized: true,
+    ca,
+  });
   assert.equal(options.max, 8);
   assert.equal(options.connectionTimeoutMillis, 10000);
   assert.equal(options.statement_timeout, 10000);
