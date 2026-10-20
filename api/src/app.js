@@ -22,14 +22,6 @@ function hasAtMostDecimalPlaces(value, places) {
   return Math.max(0, fractionLength - exponent) <= places;
 }
 
-// Keep pagination offsets bounded and predictable for both PostgreSQL and memory mode.
-function parseOffset(value) {
-  if (value === undefined || value === null || value === '') return 0;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
-  return Math.min(Math.floor(parsed), 1_000_000);
-}
-
 function parseQueryInteger(value, defaultValue, min, max) {
   if (value === undefined) return defaultValue;
   if (typeof value !== 'string' || !/^(0|[1-9][0-9]*)$/.test(value)) return null;
