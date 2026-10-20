@@ -30,6 +30,14 @@ function parseOffset(value) {
   return Math.min(Math.floor(parsed), 1_000_000);
 }
 
+function parseQueryInteger(value, defaultValue, min, max) {
+  if (value === undefined) return defaultValue;
+  if (typeof value !== 'string' || !/^(0|[1-9][0-9]*)$/.test(value)) return null;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) return null;
+  return parsed;
+}
+
 // Route identifiers must be complete positive integers; parseInt would accept values like "12abc".
 function parsePositiveId(value) {
   if (typeof value !== 'string' || !/^[1-9][0-9]*$/.test(value)) return null;
@@ -262,8 +270,9 @@ function createApp(options = {}) {
 
   app.get('/api/admin/users', authenticate, requireAdmin, async (req, res, next) => {
     try {
-      const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
-      const offset = parseOffset(req.query.offset);
+      const limit = parseQueryInteger(req.query.limit, 50, 1, 100);
+      const offset = parseQueryInteger(req.query.offset, 0, 0, 1_000_000);
+      if (limit === null || offset === null) return res.status(400).json({ error: 'limit must be 1-100 and offset must be 0-1000000 integers' });
       if (pool) {
         const [count, result] = await Promise.all([
           pool.query('SELECT COUNT(*)::int AS total FROM wathiq_users'),
@@ -280,8 +289,9 @@ function createApp(options = {}) {
     try {
       const status = typeof req.query.status === 'string' ? req.query.status : 'all';
       if (!['all', 'open', 'closed'].includes(status)) return res.status(400).json({ error: 'status must be all, open, or closed' });
-      const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
-      const offset = parseOffset(req.query.offset);
+      const limit = parseQueryInteger(req.query.limit, 50, 1, 100);
+      const offset = parseQueryInteger(req.query.offset, 0, 0, 1_000_000);
+      if (limit === null || offset === null) return res.status(400).json({ error: 'limit must be 1-100 and offset must be 0-1000000 integers' });
       if (pool) {
         const where = status === 'all' ? '' : ' WHERE status = $1';
         const countParams = status === 'all' ? [] : [status];
@@ -328,8 +338,9 @@ function createApp(options = {}) {
 
   app.get('/api/offers', async (req, res, next) => {
     try {
-      const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
-      const offset = parseOffset(req.query.offset);
+      const limit = parseQueryInteger(req.query.limit, 20, 1, 50);
+      const offset = parseQueryInteger(req.query.offset, 0, 0, 1_000_000);
+      if (limit === null || offset === null) return res.status(400).json({ error: 'limit must be 1-50 and offset must be 0-1000000 integers' });
       const asset = typeof req.query.asset === 'string' ? req.query.asset.toUpperCase() : null;
       if (asset && !ALLOWED_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset' });
       const result = await listOffers({ limit, offset, asset });
@@ -390,8 +401,9 @@ function createApp(options = {}) {
   // A signed-in account can inspect its own offers, including closed ones.
   app.get('/api/my/offers', authenticate, async (req, res, next) => {
     try {
-      const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
-      const offset = parseOffset(req.query.offset);
+      const limit = parseQueryInteger(req.query.limit, 20, 1, 50);
+      const offset = parseQueryInteger(req.query.offset, 0, 0, 1_000_000);
+      if (limit === null || offset === null) return res.status(400).json({ error: 'limit must be 1-50 and offset must be 0-1000000 integers' });
       if (pool) {
         const [count, result] = await Promise.all([
           pool.query('SELECT COUNT(*)::int AS total FROM wathiq_offers WHERE owner_id = $1', [req.auth.userId]),
