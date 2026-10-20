@@ -107,7 +107,7 @@ test('authentication rejects a correctly signed token that declares an unexpecte
 test('PostgreSQL connections verify TLS certificates by default and support a trusted private CA', () => {
   const options = createPoolOptions({ DATABASE_URL: 'postgres://example', PGPOOL_MAX: '8' });
   assert.deepEqual(options.ssl, { rejectUnauthorized: true });
-  const ca = '-----BEGIN CERTIFICATE-----\\ntrusted-root\\n-----END CERTIFICATE-----';
+  const ca = '-----BEGIN CERTIFICATE-----\ntrusted-root\n-----END CERTIFICATE-----';
   assert.deepEqual(createPoolOptions({ PGSSL_CA_CERT: ca }).ssl, {
     rejectUnauthorized: true,
     ca,
