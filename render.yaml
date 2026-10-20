@@ -22,8 +22,8 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
-      - key: PGSSL_CA_CERT
-        sync: false
+      - key: PGSSLMODE
+        value: require
   - type: web
     name: wathiq-escrow-web
     runtime: static
