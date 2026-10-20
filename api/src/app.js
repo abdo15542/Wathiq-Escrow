@@ -29,6 +29,13 @@ function parseOffset(value) {
   if (!Number.isFinite(parsed) || parsed <= 0) return 0;
   return Math.min(Math.floor(parsed), 1_000_000);
 }
+
+// Route identifiers must be complete positive integers; parseInt would accept values like "12abc".
+function parsePositiveId(value) {
+  if (typeof value !== 'string' || !/^[1-9][0-9]*$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
 function signToken(payload, secret) {
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = b64url(JSON.stringify(payload));
@@ -305,8 +312,8 @@ function createApp(options = {}) {
 
   app.patch('/api/admin/offers/:id/close', authenticate, requireAdmin, async (req, res, next) => {
     try {
-      const id = Number.parseInt(req.params.id, 10);
-      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'invalid offer id' });
+      const id = parsePositiveId(req.params.id);
+      if (id === null) return res.status(400).json({ error: 'invalid offer id' });
       if (pool) {
         const result = await pool.query("UPDATE wathiq_offers SET status = 'closed' WHERE id = $1 AND status = 'open' RETURNING id", [id]);
         if (!result.rowCount) return res.status(404).json({ error: 'open offer not found' });
@@ -332,8 +339,8 @@ function createApp(options = {}) {
 
   app.get('/api/offers/:id', async (req, res, next) => {
     try {
-      const id = Number.parseInt(req.params.id, 10);
-      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'invalid offer id' });
+      const id = parsePositiveId(req.params.id);
+      if (id === null) return res.status(400).json({ error: 'invalid offer id' });
       if (pool) {
         const result = await pool.query("SELECT id,owner_id,title,asset,price,payment_method,status,created_at FROM wathiq_offers WHERE id = $1 AND status = 'open'", [id]);
         if (!result.rows[0]) return res.status(404).json({ error: 'offer not found' });
@@ -410,8 +417,8 @@ function createApp(options = {}) {
 
   app.patch('/api/offers/:id/close', authenticate, async (req, res, next) => {
     try {
-      const id = Number.parseInt(req.params.id, 10);
-      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'invalid offer id' });
+      const id = parsePositiveId(req.params.id);
+      if (id === null) return res.status(400).json({ error: 'invalid offer id' });
       if (pool) {
         const result = await pool.query("UPDATE wathiq_offers SET status = 'closed' WHERE id = $1 AND owner_id = $2 AND status = 'open' RETURNING id", [id, req.auth.userId]);
         if (!result.rowCount) return res.status(404).json({ error: 'open offer not found for this account' });
