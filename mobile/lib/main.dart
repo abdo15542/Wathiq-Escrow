@@ -23,21 +23,7 @@ bool isApiUriAllowed(Uri uri, {required bool releaseMode}) {
 
 String? validateOfferPrice(String? value) {
   final raw = (value ?? '').trim();
-
-  // Match the API's decimal precision and reject exponent/comma notation.
-  if (!RegExp(r'^\d+(?:\.\d{1,10})?$').hasMatch(raw)) {
-    return 'أدخل سعرًا عشريًا صحيحًا بحد أقصى 10 منازل';
-  }
-
-  final price = double.tryParse(raw);
-  if (price == null ||
-      !price.isFinite ||
-      price <= 0 ||
-      price > 1000000000) {
-    return 'أدخل سعرًا موجبًا لا يتجاوز مليارًا';
-  }
-  return null;
-}
+  if (!RegExp(r'^\d+(?:\.\d{1,10})?
 
 class WathiqApp extends StatelessWidget {
   const WathiqApp({super.key});
@@ -386,7 +372,7 @@ class _HomePageState extends State<HomePage> {
                           labelText: 'السعر التجريبي',
                           suffixText: 'BNB',
                         ),
-                        validator: validateOfferPrice,
+                        validator: validateOfferPrice
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
@@ -653,7 +639,6 @@ class _HomePageState extends State<HomePage> {
 ).hasMatch(raw)) {
     return 'أدخل سعرًا عشريًا صحيحًا بحد أقصى 10 منازل';
   }
-
   final price = double.tryParse(raw);
   if (price == null ||
       !price.isFinite ||
@@ -1013,18 +998,7 @@ class _HomePageState extends State<HomePage> {
                           labelText: 'السعر التجريبي',
                           suffixText: 'BNB',
                         ),
-                        validator: (value) {
-                          final price = double.tryParse(
-                            value?.trim() ?? '',
-                          );
-                          if (price == null ||
-                              !price.isFinite ||
-                              price <= 0 ||
-                              price > 1000000000) {
-                            return 'أدخل سعرًا موجبًا صالحًا';
-                          }
-                          return null;
-                        },
+                        validator: validateOfferPrice
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
