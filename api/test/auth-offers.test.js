@@ -181,3 +181,22 @@ test('offer route IDs reject partial, decimal, zero, and unsafe integer strings'
   assert.equal(malformedClose.status, 400);
   assert.deepEqual(await malformedClose.json(), { error: 'invalid offer id' });
 });
+
+test('offer pagination rejects malformed and out-of-range query parameters', async t => {
+  const base = await withServer(t, createApp());
+  for (const query of [
+    'limit=1abc', 'limit=1.5', 'limit=0', 'limit=51',
+    'offset=-1', 'offset=1.2', 'offset=1abc', 'offset=1000001',
+  ]) {
+    const response = await fetch(base + '/api/offers?' + query);
+    assert.equal(response.status, 400, 'expected invalid pagination rejection for ' + query);
+    assert.deepEqual(await response.json(), {
+      error: 'limit must be 1-50 and offset must be 0-1000000 integers',
+    });
+  }
+  const valid = await fetch(base + '/api/offers?limit=10&offset=0');
+  assert.equal(valid.status, 200);
+  const payload = await valid.json();
+  assert.equal(payload.limit, 10);
+  assert.equal(payload.offset, 0);
+});
