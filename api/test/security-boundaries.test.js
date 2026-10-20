@@ -25,6 +25,16 @@ test('authentication endpoints throttle repeated attempts from the same client',
   }
   assert.deepEqual(statuses.slice(0, 10), Array(10).fill(401));
   assert.equal(statuses[10], 429);
+
+  const retryResponse = await fetch(base + '/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'missing@example.com', password: 'incorrect-password' }),
+  });
+  assert.equal(retryResponse.status, 429);
+  assert.match(retryResponse.headers.get('retry-after') || '', /^[1-9][0-9]*$/);
+  assert.ok(Number(retryResponse.headers.get('retry-after')) <= 900);
+  await retryResponse.arrayBuffer();
 });
 
 test('API rejects oversized JSON bodies with a stable 413 response', async t => {

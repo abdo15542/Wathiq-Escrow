@@ -177,6 +177,8 @@ function createApp(options = {}) {
     const current = now();
     const window = authWindow.get(key);
     if (window && current - window.startedAt < 15 * 60_000 && window.count >= 10) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((window.startedAt + 15 * 60_000 - current) / 1000));
+      res.set('Retry-After', String(retryAfterSeconds));
       return res.status(429).json({ error: 'too many authentication attempts; try again in 15 minutes' });
     }
     if (!window || current - window.startedAt >= 15 * 60_000) {
