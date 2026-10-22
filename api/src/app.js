@@ -115,13 +115,21 @@ function createApp(options = {}) {
   const tokenSecret = options.tokenSecret || process.env.JWT_SECRET || (production ? '' : 'development-only-secret-change-me');
   if (production && !pool) throw new Error('DATABASE_URL is required in production');
   if (production && tokenSecret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters in production');
+  const corsOrigin = process.env.CORS_ORIGIN || (production ? '' : 'http://localhost:4173');
+  if (production) {
+    let parsedOrigin;
+    try { parsedOrigin = new URL(corsOrigin); } catch {}
+    if (!parsedOrigin || parsedOrigin.protocol !== 'https:' || parsedOrigin.origin !== corsOrigin) {
+      throw new Error('CORS_ORIGIN must be a single HTTPS origin without a path in production');
+    }
+  }
 
   app.disable('x-powered-by');
   // Render terminates the public connection at one trusted proxy hop; use the client IP
   // supplied by that proxy so rate limits are not shared by every visitor.
   app.set('trust proxy', 1);
   app.use(helmet());
-  app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:4173', methods: ['GET', 'POST', 'PATCH', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
+  app.use(cors({ origin: corsOrigin, methods: ['GET', 'POST', 'PATCH', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
   app.use(express.json({ limit: '32kb', strict: true }));
 
   const userFromRow = row => ({ id: Number(row.id), email: row.email, displayName: row.display_name, role: row.role, createdAt: new Date(row.created_at).toISOString() });

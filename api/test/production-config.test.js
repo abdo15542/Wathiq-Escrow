@@ -32,6 +32,22 @@ test('production configuration fails closed without a database', () => {
   });
 });
 
+test('production configuration requires a single HTTPS CORS origin', () => {
+  const pool = { query: async () => ({ rows: [] }) };
+  const secret = 'a'.repeat(40);
+  withEnv({ NODE_ENV: 'production', JWT_SECRET: secret, CORS_ORIGIN: undefined }, () => {
+    assert.throws(() => createApp({ pool }), /CORS_ORIGIN must be a single HTTPS origin/);
+  });
+  for (const origin of ['http://wathiq.example', '*', 'https://wathiq.example/path', 'https://wathiq.example/']) {
+    withEnv({ NODE_ENV: 'production', JWT_SECRET: secret, CORS_ORIGIN: origin }, () => {
+      assert.throws(() => createApp({ pool }), /CORS_ORIGIN must be a single HTTPS origin/);
+    });
+  }
+  withEnv({ NODE_ENV: 'production', JWT_SECRET: secret, CORS_ORIGIN: 'https://wathiq-escrow-web.onrender.com' }, () => {
+    assert.doesNotThrow(() => createApp({ pool }));
+  });
+});
+
 test('production configuration rejects a weak signing secret', () => {
   withEnv({ NODE_ENV: 'production', JWT_SECRET: 'too-short' }, () => {
     assert.throws(() => createApp({ pool: { query: async () => ({ rows: [] }) } }), /JWT_SECRET must be at least 32 characters/);
