@@ -6,6 +6,11 @@ const { createApp, ensureSchema } = require('../src/app');
 test('PostgreSQL keeps accounts and offers after the API app is recreated', {
   skip: !process.env.DATABASE_URL && 'DATABASE_URL is not configured; PostgreSQL integration test runs in CI',
 }, async () => {
+  const databaseUrl = new URL(process.env.DATABASE_URL);
+  const databaseName = databaseUrl.pathname.replace(/^\\//, '');
+  if (!/^wathiq_test(?:$|_)/.test(databaseName)) {
+    throw new Error('Refusing to truncate tables: integration tests only run against a database named wathiq_test.');
+  }
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 5000 });
   let server;
   try {
