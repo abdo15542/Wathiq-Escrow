@@ -373,7 +373,11 @@ function createApp(options = {}) {
       const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
       const current = now();
       const previous = createWindow.get(clientKey);
-      if (previous && current - previous.startedAt < 60_000 && previous.count >= maxCreatesPerMinute) return res.status(429).json({ error: 'rate limit exceeded; try again later' });
+      if (previous && current - previous.startedAt < 60_000 && previous.count >= maxCreatesPerMinute) {
+        const retryAfterSeconds = Math.max(1, Math.ceil((previous.startedAt + 60_000 - current) / 1000));
+        res.set('Retry-After', String(retryAfterSeconds));
+        return res.status(429).json({ error: 'rate limit exceeded; try again later' });
+      }
       if (!previous || current - previous.startedAt >= 60_000) {
         if (!previous) pruneRateLimitMap(createWindow, current, 60_000);
         createWindow.set(clientKey, { startedAt: current, count: 1 });

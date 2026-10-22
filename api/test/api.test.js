@@ -127,7 +127,10 @@ test('applies a per-client create rate limit after validation', async t => {
   const token = await register(base);
   assert.equal((await sendOffer(base, token, { ...validOffer(), title: 'x' })).status, 400);
   assert.equal((await sendOffer(base, token, validOffer())).status, 201);
-  assert.equal((await sendOffer(base, token, validOffer('Second offer'))).status, 429);
+  const limited = await sendOffer(base, token, validOffer('Second offer'));
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers.get('retry-after'), '60');
+  assert.deepEqual(await limited.json(), { error: 'rate limit exceeded; try again later' });
   clock += 60_001;
   assert.equal((await sendOffer(base, token, validOffer('Third offer'))).status, 201);
 });
