@@ -1,8 +1,13 @@
 {
   "name": "wathiq-api",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "main": "src/server.js",
   "scripts": { "start": "node src/server.js", "test": "node --test" },
-  "dependencies": { "cors": "^2.8.5", "express": "^4.21.2", "helmet": "^8.0.0" }
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "pg": "^8.13.1"
+  }
 }

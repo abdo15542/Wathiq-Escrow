@@ -1,4 +1,3 @@
-
 name: Wathiq CI
 
 on:
@@ -8,6 +7,7 @@ on:
       - master
       - feature/usdt-escrow
       - feature/production-readiness
+      - feature/persistent-api-postgres
   pull_request:
   workflow_dispatch:
 
@@ -22,11 +22,9 @@ jobs:
   contracts-api-web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -35,25 +33,18 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             api/package-lock.json
-
       - name: Install contract dependencies
         run: npm ci --no-audit --no-fund
-
       - name: Compile contracts
         run: npm run compile
-
       - name: Test contracts
         run: npm test
-
       - name: Install API dependencies
-        run: npm ci --prefix api --no-audit --no-fund
-
+        run: npm install --prefix api --no-audit --no-fund
       - name: Test API
         run: npm run test:api
-
       - name: Build web assets
         run: npm run build:web
-
       - name: Upload web bundle
         uses: actions/upload-artifact@v4
         with:
@@ -64,38 +55,30 @@ jobs:
   android-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.5'
           channel: stable
           cache: true
-
       - name: Generate Android platform scaffolding
         working-directory: mobile
         run: flutter create --platforms=android --project-name wathiq_mobile .
-
       - name: Resolve Flutter dependencies
         working-directory: mobile
         run: flutter pub get
-
       - name: Analyze Flutter source
         working-directory: mobile
         run: flutter analyze
-
       - name: Test Flutter app
         working-directory: mobile
         run: flutter test --reporter expanded
-
       - name: Build release APK
         working-directory: mobile
         run: flutter build apk --release
-
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
