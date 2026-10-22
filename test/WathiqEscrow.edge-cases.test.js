@@ -48,7 +48,11 @@ describe("WathiqEscrow settlement edge cases", function () {
     expect(deal.status).to.equal(2);
     expect(deal.amount).to.equal(0);
     expect(await escrow.pendingWithdrawals(seller.address)).to.equal(amount);
+    // Settlement credits a pull-payment balance; funds remain in the contract until withdrawn.
+    expect(await ethers.provider.getBalance(escrow.target)).to.equal(amount);
+    await escrow.connect(seller).withdraw();
     expect(await ethers.provider.getBalance(escrow.target)).to.equal(0);
+    expect(await escrow.pendingWithdrawals(seller.address)).to.equal(0);
   });
 
   it("keeps balances isolated across deals and credits the correct recipient", async function () {
