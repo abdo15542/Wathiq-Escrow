@@ -12,7 +12,10 @@ async function main() {
   const [deployer] = await hre.ethers.getSigners();
   const deployerAddress = await deployer.getAddress();
   const balance = await hre.ethers.provider.getBalance(deployerAddress);
-  if (balance === 0n) throw new Error("Deployer has no testnet native token for gas. Fund it with test BNB; never use a mainnet key.");
+  const minimumDeploymentBalance = hre.ethers.parseEther("0.02");
+  if (balance < minimumDeploymentBalance) {
+    throw new Error("Deployer needs at least 0.02 test BNB for contract deployment and the full lifecycle smoke test. Fund this testnet-only wallet; never use a mainnet key.");
+  }
 
   console.log("Network: BNB Smart Chain Testnet (chainId 97)");
   console.log("Deployer:", deployerAddress);
@@ -34,6 +37,53 @@ async function main() {
   if ((await token.symbol()) !== "mUSDT" || (await token.decimals()) !== 6n) throw new Error("Post-deployment verification failed: unexpected test token metadata.");
   if ((await escrow.token()).toLowerCase() !== tokenAddress.toLowerCase()) throw new Error("Post-deployment verification failed: escrow token address mismatch.");
 
+  // Exercise the complete escrow lifecycle on-chain with worthless test tokens.
+  // Fresh temporary wallets are used only for this one test and their keys are never persisted.
+  const sellerWallet = hre.ethers.Wallet.createRandom().connect(hre.ethers.provider);
+  const arbiterWallet = hre.ethers.Wallet.createRandom().connect(hre.ethers.provider);
+  const testGas = hre.ethers.parseEther("0.002");
+  const fundSeller = await deployer.sendTransaction({ to: sellerWallet.address, value: testGas });
+  await fundSeller.wait();
+  const fundArbiter = await deployer.sendTransaction({ to: arbiterWallet.address, value: testGas });
+  await fundArbiter.wait();
+
+  const smokeAmount = hre.ethers.parseUnits("1", 6);
+  await (await token.mint(deployerAddress, smokeAmount)).wait();
+  await (await token.approve(escrowAddress, smokeAmount)).wait();
+  const smokeDealId = await escrow.nextDealId();
+  await (await escrow.createDeal(sellerWallet.address, arbiterWallet.address, smokeAmount)).wait();
+
+  const createdDeal = await escrow.getDeal(smokeDealId);
+  if (
+    createdDeal.buyer.toLowerCase() !== deployerAddress.toLowerCase() ||
+    createdDeal.seller.toLowerCase() !== sellerWallet.address.toLowerCase() ||
+    createdDeal.arbiter.toLowerCase() !== arbiterWallet.address.toLowerCase() ||
+    createdDeal.amount !== smokeAmount ||
+    Number(createdDeal.status) !== 1
+  ) {
+    throw new Error("On-chain smoke test failed: newly created escrow deal does not match expected state.");
+  }
+
+  await (await escrow.connect(sellerWallet).voteRelease(smokeDealId)).wait();
+  await (await escrow.connect(arbiterWallet).voteRelease(smokeDealId)).wait();
+  const settledDeal = await escrow.getDeal(smokeDealId);
+  if (Number(settledDeal.status) !== 2 || settledDeal.amount !== 0n) {
+    throw new Error("On-chain smoke test failed: two release votes did not settle the deal.");
+  }
+
+  const sellerBalanceBefore = await token.balanceOf(sellerWallet.address);
+  const sellerPending = await escrow.pendingWithdrawals(sellerWallet.address);
+  if (sellerPending !== smokeAmount) {
+    throw new Error("On-chain smoke test failed: seller pending withdrawal amount is incorrect.");
+  }
+  await (await escrow.connect(sellerWallet).withdraw()).wait();
+  const sellerBalanceAfter = await token.balanceOf(sellerWallet.address);
+  if (sellerBalanceAfter - sellerBalanceBefore !== smokeAmount ||
+      (await escrow.pendingWithdrawals(sellerWallet.address)) !== 0n) {
+    throw new Error("On-chain smoke test failed: seller withdrawal did not transfer the expected test tokens.");
+  }
+  console.log("On-chain lifecycle smoke test passed: create -> 2-of-3 release -> seller withdrawal.");
+
   const deployment = {
     network: "BNB Smart Chain Testnet",
     chainId: 97,
@@ -41,6 +91,12 @@ async function main() {
     deployer: deployerAddress,
     token: { name: "Mock USDT", symbol: "mUSDT", decimals: 6, address: tokenAddress },
     escrow: { address: escrowAddress, tokenAddress },
+    smokeTest: {
+      status: "passed",
+      dealId: smokeDealId.toString(),
+      amount: "1 mUSDT (worthless test token)",
+      flow: ["createDeal", "seller voteRelease", "arbiter voteRelease", "seller withdraw"]
+    },
     explorer: {
       token: `https://testnet.bscscan.com/address/${tokenAddress}`,
       escrow: `https://testnet.bscscan.com/address/${escrowAddress}`
