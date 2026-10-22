@@ -195,6 +195,17 @@ class WathiqApi {
         .toList();
   }
 
+  static Future<List<Offer>> getMyOffers() async {
+    final data = await request('GET', '/api/my/offers?limit=50&offset=0');
+    final items = data['items'];
+    if (items is! List) throw Exception('صيغة عروضك غير صحيحة.');
+    return items.map((item) => Offer.fromJson(Map<String, dynamic>.from(item as Map))).toList();
+  }
+
+  static Future<void> closeOffer(int id) async {
+    await request('PATCH', '/api/offers/$id/close');
+  }
+
   static Future<Offer> createOffer({
     required String title,
     required double price,
@@ -226,6 +237,8 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   List<Offer> offers = [];
+  List<Offer> myOffers = [];
+  bool loadingMyOffers = false;
   bool loading = false;
   String? error;
   String info = 'سجّل الدخول لإنشاء عرض؛ تصفح العروض متاح للجميع.';
@@ -317,6 +330,41 @@ class _HomePageState extends State<HomePage> {
       if (mounted) {
         setState(() => loading = false);
       }
+    }
+  }
+
+  Future<void> loadMyOffers() async {
+    if (WathiqApi.token == null) return;
+    setState(() => loadingMyOffers = true);
+    try {
+      final result = await WathiqApi.getMyOffers();
+      if (!mounted) return;
+      setState(() => myOffers = result);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => loadingMyOffers = false);
+    }
+  }
+
+  Future<void> closeMyOffer(Offer offer) async {
+    if (offer.status != 'open') return;
+    try {
+      await WathiqApi.closeOffer(offer.id);
+      await loadMyOffers();
+      await loadOffers();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تم إغلاق العرض رقم ${offer.id}.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
     }
   }
 
@@ -580,6 +628,7 @@ class _HomePageState extends State<HomePage> {
           else ...[
             Text('مسجّل الدخول: $signedInEmail', textAlign: TextAlign.center),
             OutlinedButton.icon(onPressed: loading ? null : showCreateOfferDialog, icon: const Icon(Icons.add), label: const Text('إنشاء عرض جديد')),
+            OutlinedButton.icon(onPressed: loadingMyOffers ? null : loadMyOffers, icon: const Icon(Icons.inventory_2_outlined), label: Text(loadingMyOffers ? 'جارٍ تحميل عروضي...' : 'عروضي')),
             TextButton.icon(onPressed: () async { await WathiqApi.logout(); if (mounted) setState(() { signedInEmail = null; info = 'تم تسجيل الخروج.'; }); }, icon: const Icon(Icons.logout), label: const Text('تسجيل الخروج')),
           ],
           const SizedBox(height: 16),
@@ -597,6 +646,24 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
           const SizedBox(height: 16),
+          if (myOffers.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            Text('عروضي (${myOffers.length})', style: Theme.of(context).textTheme.titleLarge),
+            ...myOffers.map((offer) => Card(
+              child: ListTile(
+                title: Text(offer.title),
+                subtitle: Text('رقم ${offer.id} • ${offer.price} ${offer.asset}\nالحالة: ${offer.status}'),
+                isThreeLine: true,
+                trailing: offer.status == 'open'
+                    ? IconButton(
+                        tooltip: 'إغلاق العرض',
+                        icon: const Icon(Icons.close, color: Colors.orangeAccent),
+                        onPressed: () => closeMyOffer(offer),
+                      )
+                    : const Icon(Icons.check_circle_outline),
+              ),
+            )),
+          ],
           if (offers.isNotEmpty)
             Text(
               'الصفقات (${offers.length})',
