@@ -20,7 +20,10 @@ async function start() {
 
   const app = createApp({ pool });
   const port = Number(process.env.PORT || 4000);
-  const server = app.listen(port, () => console.log('Wathiq API listening on ' + port + (pool ? ' with PostgreSQL' : ' in development memory mode')));
+  // Render's public web services must bind to the container's public interface.
+  const server = app.listen(port, '0.0.0.0', () => {
+    console.log('Wathiq API listening on ' + port + (pool ? ' with PostgreSQL' : ' in development memory mode'));
+  });
   const shutdown = async () => {
     server.close(async () => {
       if (pool) await pool.end();
