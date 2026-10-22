@@ -86,4 +86,24 @@ describe("WathiqEscrow settlement edge cases", function () {
       .to.be.revertedWithCustomError(escrow, "NothingToWithdraw");
     expect((await escrow.getDeal(1)).status).to.equal(1);
   });
+
+  it("blocks re-entrant withdrawals from a malicious recipient", async function () {
+    const Receiver = await ethers.getContractFactory("ReentrantWithdrawer");
+    const receiver = await Receiver.deploy(escrow.target);
+    await receiver.waitForDeployment();
+
+    await escrow.connect(buyer).createDeal(await receiver.getAddress(), arbiter.address, { value: amount });
+    await escrow.connect(buyer).voteRelease(1);
+    await escrow.connect(arbiter).voteRelease(1);
+    expect(await escrow.pendingWithdrawals(await receiver.getAddress())).to.equal(amount);
+
+    await receiver.attack();
+
+    expect(await receiver.reentryBlocked()).to.equal(true);
+    expect(await receiver.reentrySucceeded()).to.equal(false);
+    expect(await receiver.receiveCount()).to.equal(1);
+    expect(await ethers.provider.getBalance(await receiver.getAddress())).to.equal(amount);
+    expect(await escrow.pendingWithdrawals(await receiver.getAddress())).to.equal(0);
+    expect(await ethers.provider.getBalance(escrow.target)).to.equal(0);
+  });
 });
