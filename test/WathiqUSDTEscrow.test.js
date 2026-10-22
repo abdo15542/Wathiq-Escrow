@@ -108,4 +108,25 @@ describe("WathiqUSDTEscrow", function () {
     expect(await token.balanceOf(await escrow.getAddress())).to.equal(0);
   });
 
+
+  it("rejects fee-on-transfer tokens and reverts the token transfer atomically", async () => {
+    const FeeToken = await ethers.getContractFactory("FeeOnTransferToken");
+    const feeToken = await FeeToken.deploy();
+    await feeToken.waitForDeployment();
+
+    const Escrow = await ethers.getContractFactory("WathiqUSDTEscrow");
+    const feeEscrow = await Escrow.deploy(await feeToken.getAddress());
+    await feeEscrow.waitForDeployment();
+
+    await feeToken.mint(buyer.address, amount * 2n);
+    await feeToken.connect(buyer).approve(await feeEscrow.getAddress(), amount);
+
+    await expect(
+      feeEscrow.connect(buyer).createDeal(seller.address, arbiter.address, amount)
+    ).to.be.revertedWithCustomError(feeEscrow, "UnsupportedTokenBehavior");
+
+    expect(await feeToken.balanceOf(buyer.address)).to.equal(amount * 2n);
+    expect(await feeToken.balanceOf(await feeEscrow.getAddress())).to.equal(0);
+    expect(await feeEscrow.nextDealId()).to.equal(1);
+  });
 });
