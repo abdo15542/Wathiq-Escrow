@@ -89,6 +89,32 @@ jobs:
           path: web/dist/
           if-no-files-found: error
 
+      - name: Smoke-test deployed API and website
+        env:
+          API_BASE_URL: https://wathiq-escrow-api.onrender.com
+          WEB_BASE_URL: https://wathiq-escrow-web.onrender.com
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --connect-timeout 10 --max-time 25 --retry 2 --retry-delay 3 \
+            "$API_BASE_URL/health" --output /tmp/wathiq-health.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const health = JSON.parse(fs.readFileSync('/tmp/wathiq-health.json', 'utf8'));
+          if (health.status !== 'ok' || health.service !== 'wathiq-api' || health.database !== 'connected') {
+            console.error('Production API readiness failed:', health);
+            process.exit(1);
+          }
+          console.log('Production API and PostgreSQL readiness passed.');
+          NODE
+          status="$(curl --silent --show-error --location --output /dev/null \
+            --write-out '%{http_code}' --connect-timeout 10 --max-time 25 --retry 2 \
+            "$WEB_BASE_URL/")"
+          case "$status" in
+            2*) echo "Production website returned HTTP $status." ;;
+            *) echo "::error::Production website returned HTTP $status."; exit 1 ;;
+          esac
+
   android-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 30
