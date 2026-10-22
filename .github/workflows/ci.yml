@@ -9,6 +9,7 @@ on:
       - fix/mobile-api-production-config
       - feature/usdt-escrow
       - feature/production-readiness
+      - feature/testnet-deployment-pipeline
   pull_request:
   workflow_dispatch:
 
