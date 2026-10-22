@@ -3,12 +3,23 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 const String apiBaseUrl = String.fromEnvironment(
   'WATHIQ_API_BASE_URL',
-  defaultValue: 'http://10.0.2.2:4000',
+  defaultValue: '',
 );
+
+// Release builds must never send bearer tokens over clear-text HTTP.
+bool isApiUriAllowed(Uri uri, {required bool releaseMode}) {
+  if (uri.host.isEmpty || uri.userInfo.isNotEmpty) return false;
+  if (releaseMode) return uri.scheme == 'https';
+  if (uri.scheme == 'https') return true;
+  return uri.scheme == 'http' &&
+      const {'localhost', '127.0.0.1', '10.0.2.2'}.contains(uri.host);
+}
 
 void main() => runApp(const WathiqApp());
 
@@ -65,25 +76,65 @@ class Offer {
 }
 
 class WathiqApi {
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+  static String? token;
+
+  static Future<void> restoreSession() async {
+    try {
+      token = await _secureStorage.read(key: 'wathiq_access_token');
+      if (token != null) await request('GET', '/api/auth/me');
+    } catch (_) {
+      token = null;
+      try { await _secureStorage.delete(key: 'wathiq_access_token'); } catch (_) {}
+    }
+  }
+
+  static Future<Map<String, dynamic>> authenticate({required String email, required String password, String? displayName}) async {
+    final isRegister = displayName != null;
+    final data = await request('POST', isRegister ? '/api/auth/register' : '/api/auth/login', body: {
+      'email': email.trim(), 'password': password,
+      if (isRegister) 'displayName': displayName.trim(),
+    });
+    final newToken = data['token'];
+    if (newToken is! String || newToken.isEmpty) throw Exception('لم يُرجع الخادم رمز جلسة صالحًا.');
+    token = newToken;
+    await _secureStorage.write(key: 'wathiq_access_token', value: newToken);
+    return Map<String, dynamic>.from(data['user'] as Map);
+  }
+
+  static Future<void> logout() async {
+    token = null;
+    await _secureStorage.delete(key: 'wathiq_access_token');
+  }
+
   static Future<Map<String, dynamic>> request(
     String method,
     String path, {
     Map<String, dynamic>? body,
   }) async {
+    if (apiBaseUrl.trim().isEmpty) {
+      throw Exception(
+        'لم يتم ضبط عنوان خادم واثق لهذا الإصدار. يلزم نشر الخادم أولًا ثم بناء التطبيق بعنوان API الصحيح.',
+      );
+    }
+
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 8);
 
     try {
       final uri = Uri.parse(apiBaseUrl).resolve(path);
+      if (!isApiUriAllowed(uri, releaseMode: kReleaseMode)) {
+        throw Exception(
+          'عنوان API غير آمن. استخدم HTTPS في نسخة الإصدار، أو عنوانًا محليًا أثناء التطوير.',
+        );
+      }
 
       final request = await client
           .openUrl(method, uri)
           .timeout(const Duration(seconds: 10));
 
-      request.headers.set(
-        HttpHeaders.acceptHeader,
-        'application/json',
-      );
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      if (token != null) request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
 
       if (body != null) {
         request.headers.contentType = ContentType.json;
@@ -177,11 +228,68 @@ class _HomePageState extends State<HomePage> {
   List<Offer> offers = [];
   bool loading = false;
   String? error;
-  String info = 'اضغط «استكشف الصفقات» للاتصال بالخادم.';
+  String info = 'سجّل الدخول لإنشاء عرض؛ تصفح العروض متاح للجميع.';
+  String? signedInEmail;
 
   @override
   void initState() {
     super.initState();
+    _restoreSession();
+  }
+
+  Future<void> _restoreSession() async {
+    await WathiqApi.restoreSession();
+    if (!mounted) return;
+    if (WathiqApi.token != null) {
+      try {
+        final me = await WathiqApi.request('GET', '/api/auth/me');
+        if (mounted) setState(() => signedInEmail = (me['user'] as Map)['email'] as String?);
+      } catch (_) {}
+    }
+    if (mounted) await loadOffers();
+  }
+
+  Future<void> showAuthDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    bool register = true;
+    bool saving = false;
+    String? authError;
+    final success = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(register ? 'إنشاء حساب واثق' : 'تسجيل الدخول'),
+          content: SingleChildScrollView(
+            child: Form(key: formKey, child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (register) TextFormField(controller: nameController, decoration: const InputDecoration(labelText: 'الاسم'), validator: (v) => register && (v?.trim().length ?? 0) < 2 ? 'اكتب اسمًا من حرفين على الأقل' : null),
+              TextFormField(controller: emailController, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'البريد الإلكتروني'), validator: (v) => !(v ?? '').contains('@') ? 'أدخل بريدًا صحيحًا' : null),
+              TextFormField(controller: passwordController, obscureText: true, decoration: const InputDecoration(labelText: 'كلمة المرور'), validator: (v) => (v?.length ?? 0) < 10 ? 'استخدم 10 أحرف على الأقل' : null),
+              if (authError != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(authError!, style: const TextStyle(color: Colors.redAccent))),
+              TextButton(onPressed: saving ? null : () => setDialogState(() { register = !register; authError = null; }), child: Text(register ? 'لديك حساب؟ سجّل الدخول' : 'مستخدم جديد؟ أنشئ حسابًا')),
+            ])),
+          ),
+          actions: [
+            TextButton(onPressed: saving ? null : () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
+            FilledButton(onPressed: saving ? null : () async {
+              if (!formKey.currentState!.validate()) return;
+              setDialogState(() { saving = true; authError = null; });
+              try {
+                final user = await WathiqApi.authenticate(email: emailController.text, password: passwordController.text, displayName: register ? nameController.text : null);
+                if (dialogContext.mounted) Navigator.pop(dialogContext, true);
+                if (mounted) setState(() => signedInEmail = user['email'] as String?);
+              } catch (e) {
+                setDialogState(() { saving = false; authError = e.toString().replaceFirst('Exception: ', ''); });
+              }
+            }, child: Text(saving ? 'جارٍ التحقق...' : register ? 'إنشاء الحساب' : 'دخول')),
+          ],
+        ),
+      ),
+    );
+    nameController.dispose(); emailController.dispose(); passwordController.dispose();
+    if (success == true && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تسجيل الدخول.')));
   }
 
   Future<void> loadOffers() async {
@@ -226,7 +334,7 @@ class _HomePageState extends State<HomePage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('إنشاء صفقة تجريبية'),
+              title: const Text('إنشاء عرض جديد'),
               content: SingleChildScrollView(
                 child: Form(
                   key: formKey,
@@ -315,7 +423,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(height: 12),
                       const Text(
-                        'هذه بيانات عرض تجريبي وليست معاملة مالية.',
+                        'هذا عرض سوق فقط، وليس إيداع ضمان أو معاملة مالية.',
                         style: TextStyle(color: Colors.amber),
                       ),
                     ],
@@ -425,7 +533,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'الوسيط يحمي أموالك',
+            'إدارة عروض الصفقات بشفافية',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Color(0xFFE8BD6A),
@@ -440,7 +548,7 @@ class _HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'ضمان 2 من 3',
+                    'الضمان على السلسلة قيد الربط',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
@@ -448,12 +556,12 @@ class _HomePageState extends State<HomePage> {
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'موافقتان متوافقتان من المشتري والبائع والمحكّم '
+                    'تم إعداد عقد ERC-20 للاختبار، لكن هذا التطبيق لا يرسل معاملات ضمان على السلسلة بعد. '
                     'لتسوية الصفقة.',
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'نسخة أولية: لم يتم ربط التطبيق بعقد منشور.',
+                    'تنبيه: التطبيق الحالي يدير العروض والحسابات فقط، ولا ينفذ ضمانًا على السلسلة.',
                     style: TextStyle(color: Color(0xFFE8BD6A)),
                   ),
                 ],
@@ -467,11 +575,13 @@ class _HomePageState extends State<HomePage> {
             label: const Text('استكشف الصفقات'),
           ),
           const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: loading ? null : showCreateOfferDialog,
-            icon: const Icon(Icons.add),
-            label: const Text('إنشاء صفقة تجريبية'),
-          ),
+          if (signedInEmail == null)
+            OutlinedButton.icon(onPressed: showAuthDialog, icon: const Icon(Icons.login), label: const Text('تسجيل الدخول / إنشاء حساب'))
+          else ...[
+            Text('مسجّل الدخول: $signedInEmail', textAlign: TextAlign.center),
+            OutlinedButton.icon(onPressed: loading ? null : showCreateOfferDialog, icon: const Icon(Icons.add), label: const Text('إنشاء عرض جديد')),
+            TextButton.icon(onPressed: () async { await WathiqApi.logout(); if (mounted) setState(() { signedInEmail = null; info = 'تم تسجيل الخروج.'; }); }, icon: const Icon(Icons.logout), label: const Text('تسجيل الخروج')),
+          ],
           const SizedBox(height: 16),
           if (loading) const LinearProgressIndicator(),
           Text(

@@ -1,18 +1,20 @@
 {
-"name": "wathiq-escrow",
-"version": "0.1.0",
-"private": true,
-"description": "Wathiq P2P USDT escrow prototype — testnet only, not audited for real funds",
-"scripts": {
-"test": "hardhat test",
-"compile": "hardhat compile",
-"deploy:testnet": "hardhat run scripts/deploy-p2p-testnet.js --network bscTestnet",
-"test:api": "npm --prefix api test",
-"build:web": "npm --prefix web run build"
-},
-"devDependencies": {
-"@nomicfoundation/hardhat-toolbox": "^5.0.0",
-"dotenv": "^16.4.5",
-"hardhat": "^2.22.17"
-}
+  "name": "wathiq-escrow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Wathiq P2P USDT escrow prototype — testnet only, not audited for real funds",
+  "scripts": {
+    "test": "hardhat test",
+    "compile": "hardhat compile",
+    "deploy:testnet": "hardhat run scripts/deploy.js --network bscTestnet",
+    "test:api": "npm --prefix api test",
+    "build:web": "npm --prefix web run build",
+    "deploy:usdt:testnet": "hardhat run scripts/deploy-usdt-testnet.js --network bscTestnet",
+    "deploy:mock-usdt:testnet": "hardhat run scripts/deploy-mock-usdt-testnet.js --network bscTestnet"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.17"
+  }
 }
