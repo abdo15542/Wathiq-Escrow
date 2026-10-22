@@ -9,6 +9,7 @@ on:
       - fix/mobile-api-production-config
       - feature/usdt-escrow
       - feature/production-readiness
+      - feature/postgres-integration-tests
   pull_request:
   workflow_dispatch:
 
@@ -23,6 +24,20 @@ jobs:
   contracts-api-web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: wathiq_test
+          POSTGRES_USER: wathiq
+          POSTGRES_PASSWORD: wathiq_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wathiq -d wathiq_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -51,6 +66,8 @@ jobs:
         run: npm install --prefix api --no-audit --no-fund
 
       - name: Test API
+        env:
+          DATABASE_URL: postgres://wathiq:wathiq_test_password@localhost:5432/wathiq_test
         run: npm run test:api
 
       - name: Check JavaScript syntax
@@ -107,26 +124,29 @@ jobs:
         working-directory: mobile
         run: flutter test --reporter expanded
 
+      - name: Warn when release API endpoint is not configured
+        if: vars.WATHIQ_API_BASE_URL == ''
+        run: echo "::warning::WATHIQ_API_BASE_URL is not set; Flutter analysis/tests will pass, but the release APK will be skipped until the deployed HTTPS API URL is configured."
+
       - name: Validate release API endpoint
+        if: vars.WATHIQ_API_BASE_URL != ''
         env:
           WATHIQ_API_BASE_URL: ${{ vars.WATHIQ_API_BASE_URL }}
         run: |
-          if [ -z "$WATHIQ_API_BASE_URL" ]; then
-            echo "::error::Set the repository variable WATHIQ_API_BASE_URL to the deployed HTTPS API origin before building a release APK."
-            exit 1
-          fi
           case "$WATHIQ_API_BASE_URL" in
             https://*) ;;
             *) echo "::error::WATHIQ_API_BASE_URL must use HTTPS."; exit 1 ;;
           esac
 
       - name: Build release APK
+        if: vars.WATHIQ_API_BASE_URL != ''
         working-directory: mobile
         env:
           WATHIQ_API_BASE_URL: ${{ vars.WATHIQ_API_BASE_URL }}
         run: flutter build apk --release --dart-define=WATHIQ_API_BASE_URL="$WATHIQ_API_BASE_URL"
 
       - name: Upload Android APK
+        if: vars.WATHIQ_API_BASE_URL != ''
         uses: actions/upload-artifact@v4
         with:
           name: wathiq-android-apk
