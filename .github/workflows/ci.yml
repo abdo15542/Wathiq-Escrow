@@ -124,29 +124,23 @@ jobs:
         working-directory: mobile
         run: flutter test --reporter expanded
 
-      - name: Warn when release API endpoint is not configured
-        if: vars.WATHIQ_API_BASE_URL == ''
-        run: echo "::warning::WATHIQ_API_BASE_URL is not set; Flutter analysis/tests will pass, but the release APK will be skipped until the deployed HTTPS API URL is configured."
-
-      - name: Validate release API endpoint
-        if: vars.WATHIQ_API_BASE_URL != ''
+      - name: Resolve and validate release API endpoint
         env:
           WATHIQ_API_BASE_URL: ${{ vars.WATHIQ_API_BASE_URL }}
         run: |
-          case "$WATHIQ_API_BASE_URL" in
+          API_BASE="${WATHIQ_API_BASE_URL:-https://wathiq-escrow-api.onrender.com}"
+          case "$API_BASE" in
             https://*) ;;
             *) echo "::error::WATHIQ_API_BASE_URL must use HTTPS."; exit 1 ;;
           esac
+          echo "WATHIQ_API_BASE_URL=$API_BASE" >> "$GITHUB_ENV"
+          echo "Release APK will use the HTTPS API endpoint: $API_BASE"
 
       - name: Build release APK
-        if: vars.WATHIQ_API_BASE_URL != ''
         working-directory: mobile
-        env:
-          WATHIQ_API_BASE_URL: ${{ vars.WATHIQ_API_BASE_URL }}
         run: flutter build apk --release --dart-define=WATHIQ_API_BASE_URL="$WATHIQ_API_BASE_URL"
 
       - name: Upload Android APK
-        if: vars.WATHIQ_API_BASE_URL != ''
         uses: actions/upload-artifact@v4
         with:
           name: wathiq-android-apk
