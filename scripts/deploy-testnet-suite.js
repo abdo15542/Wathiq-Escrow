@@ -12,7 +12,10 @@ async function main() {
   const [deployer] = await hre.ethers.getSigners();
   const deployerAddress = await deployer.getAddress();
   const balance = await hre.ethers.provider.getBalance(deployerAddress);
-  if (balance === 0n) throw new Error("Deployer has no testnet native token for gas. Fund it with test BNB; never use a mainnet key.");
+  const minimumDeploymentBalance = hre.ethers.parseEther("0.02");
+  if (balance < minimumDeploymentBalance) {
+    throw new Error("Deployer needs at least 0.02 test BNB for contract deployment and the full lifecycle smoke test. Fund this testnet-only wallet; never use a mainnet key.");
+  }
 
   console.log("Network: BNB Smart Chain Testnet (chainId 97)");
   console.log("Deployer:", deployerAddress);
@@ -39,11 +42,10 @@ async function main() {
   const sellerWallet = hre.ethers.Wallet.createRandom().connect(hre.ethers.provider);
   const arbiterWallet = hre.ethers.Wallet.createRandom().connect(hre.ethers.provider);
   const testGas = hre.ethers.parseEther("0.002");
-  const gasFunding = await Promise.all([
-    deployer.sendTransaction({ to: sellerWallet.address, value: testGas }),
-    deployer.sendTransaction({ to: arbiterWallet.address, value: testGas })
-  ]);
-  await Promise.all(gasFunding.map((tx) => tx.wait()));
+  const fundSeller = await deployer.sendTransaction({ to: sellerWallet.address, value: testGas });
+  await fundSeller.wait();
+  const fundArbiter = await deployer.sendTransaction({ to: arbiterWallet.address, value: testGas });
+  await fundArbiter.wait();
 
   const smokeAmount = hre.ethers.parseUnits("1", 6);
   await (await token.mint(deployerAddress, smokeAmount)).wait();
