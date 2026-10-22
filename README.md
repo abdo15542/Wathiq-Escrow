@@ -90,3 +90,24 @@ Not implemented for production: ERC-20 stablecoins, bank/payment verification, a
 ## Required before launch
 
 Independent smart-contract audit; formal threat model; tests on BSC testnet; key/arbiter governance; timeout and recovery policy; database migrations and backups; authentication/authorization; abuse prevention; privacy/security review; monitoring and incident response; user-facing terms; and legal/regulatory review for Libya and every target market.
+
+## Guarded BSC testnet deployment workflow
+
+The repository includes a manual workflow at `.github/workflows/deploy-testnet.yml`. It deploys only `MockUSDT` (symbol `mUSDT`, **worthless test token**) and `WathiqUSDTEscrow` to BNB Smart Chain Testnet (chain ID 97). It must never be used with a mainnet key.
+
+Before running it:
+
+1. Create a dedicated test-only EVM wallet. Never use a wallet that holds real assets.
+2. In GitHub, open **Settings → Environments** and create an environment named exactly `testnet`.
+3. Add environment secrets `DEPLOYER_PRIVATE_KEY` and `BSC_TESTNET_RPC_URL`. Do not paste either value into issues, commits, or chat.
+4. Fund the test-only wallet with test BNB from an official testnet faucet. Test BNB is only for gas and has no intended monetary value.
+5. Open **Actions → Deploy Wathiq Testnet Contracts → Run workflow**, enter exactly `deploy-testnet-only`, and run it.
+6. Confirm the workflow passes. Download the `wathiq-bsc-testnet-deployment` artifact and check both addresses on https://testnet.bscscan.com.
+
+The workflow compiles and tests the contracts before deployment, checks the chain ID, then verifies that bytecode exists, the token is `mUSDT` with six decimals, and the escrow contract references the deployed token. It writes the verified addresses to `deployments/bsc-testnet.json` as an artifact; it does not commit wallet secrets or deploy to mainnet.
+
+### Required end-to-end acceptance test
+
+After a successful testnet deployment, set the Render static-site build variables `WATHIQ_ESCROW_ADDRESS` and `WATHIQ_TOKEN_ADDRESS` to the verified artifact addresses, keep `WATHIQ_CHAIN_ID=97`, and redeploy the static site. Then use three separate test wallets (buyer, seller, arbiter) to test: mint worthless mUSDT to the buyer, approve and create a deal, verify the escrow token balance increased, collect two matching release votes and withdraw as seller; repeat with refund votes and confirm the buyer can withdraw; test the 30-day expiry path using local contract tests rather than waiting 30 days on a live testnet. Save transaction hashes and test results before considering the testnet flow validated.
+
+**Current boundary:** this workflow only deploys contracts to testnet. It does not connect the Flutter app to an on-chain wallet, does not constitute an audit, and does not make the product ready to hold real money. Mainnet deployment requires independent contract review, threat modeling, key-management and incident-response procedures, legal review, and a complete acceptance test.
