@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const { createPoolOptions } = require('../src/db-config');
 
 async function main() {
   const email = String(process.argv[2] || '').trim().toLowerCase();
@@ -6,10 +7,10 @@ async function main() {
     throw new Error('Usage: node api/scripts/promote-admin.js existing-user@example.com');
   }
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required; refusing to change any account.');
+  // Admin promotion changes privileged accounts: enforce production TLS policy
+  // even when this one-off script is launched from a shell without NODE_ENV set.
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.PGSSLMODE === 'disable' ? false : { rejectUnauthorized: false },
-    connectionTimeoutMillis: 10000,
+    ...createPoolOptions({ ...process.env, NODE_ENV: 'production' }),
     max: 1,
   });
   try {
