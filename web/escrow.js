@@ -27,10 +27,39 @@
   let account;
   let token;
   let escrow;
+  let walletListenersAttached = false;
 
   function status(message, isError = false) {
     statusEl.textContent = message;
     statusEl.style.color = isError ? '#ff9d9d' : '';
+  }
+  function invalidateWallet(message) {
+    signer = null;
+    account = null;
+    token = null;
+    escrow = null;
+    status(message, true);
+  }
+  function onAccountsChanged(accounts) {
+    invalidateWallet(Array.isArray(accounts) && accounts.length
+      ? 'تغيّر حساب المحفظة. أعد ربط المحفظة قبل أي عملية.'
+      : 'تم فصل المحفظة. أعد ربطها للمتابعة.');
+  }
+  function onChainChanged(chainId) {
+    const nextChainId = typeof chainId === 'string' ? Number.parseInt(chainId, 16) : Number(chainId);
+    invalidateWallet(nextChainId === 97
+      ? 'تغيّرت الشبكة. أعد ربط المحفظة للتحقق من العقد والشبكة.'
+      : 'قفل أمان: تغيّرت الشبكة عن BNB Smart Chain Testnet. أعد ربط المحفظة.');
+  }
+  function onWalletDisconnected() {
+    invalidateWallet('انقطع اتصال المحفظة. أعد ربطها قبل المتابعة.');
+  }
+  function attachWalletListeners() {
+    if (walletListenersAttached || !window.ethereum || typeof window.ethereum.on !== 'function') return;
+    window.ethereum.on('accountsChanged', onAccountsChanged);
+    window.ethereum.on('chainChanged', onChainChanged);
+    window.ethereum.on('disconnect', onWalletDisconnected);
+    walletListenersAttached = true;
   }
   function requireConfig() {
     if (!window.ethers) throw new Error('تعذر تحميل مكتبة المحفظة. تحقق من اتصال الإنترنت ثم أعد المحاولة.');
@@ -72,6 +101,7 @@
     if (contractToken.toLowerCase() !== cfg.tokenAddress.toLowerCase()) throw new Error('عنوان الرمز لا يطابق الرمز المثبت داخل عقد الضمان.');
     const tokenSymbol = await token.symbol();
     if (tokenSymbol !== 'mUSDT') throw new Error('قفل أمان: الرمز المتصل ليس mUSDT التجريبي؛ لن تُنفّذ أي معاملة.');
+    attachWalletListeners();
     status('تم ربط المحفظة ' + account.slice(0, 6) + '…' + account.slice(-4) + ' على شبكة الاختبار باستخدام mUSDT التجريبي.');
     await refreshBalance();
   }
