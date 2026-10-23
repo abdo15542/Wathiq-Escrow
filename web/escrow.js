@@ -147,7 +147,7 @@
   async function readDeal() {
     await ensureConnected();
     const id = document.getElementById('dealId').value.trim();
-    if (!/^[1-9]\\d*$/.test(id)) throw new Error('أدخل رقم صفقة صحيحًا.');
+    if (!/^[1-9]\d*$/.test(id)) throw new Error('أدخل رقم صفقة صحيحًا.');
     const d = await escrow.getDeal(BigInt(id));
     const states = ['غير موجودة', 'مموّلة', 'محررة للبائع', 'مستردة للمشتري'];
     outputEl.textContent = 'رقم الصفقة: ' + id +
@@ -202,7 +202,7 @@
   async function transact(action, label) {
     await ensureConnected();
     const id = document.getElementById('dealId').value.trim();
-    if (action !== 'withdraw' && !/^[1-9]\\d*$/.test(id)) throw new Error('أدخل رقم صفقة صحيحًا.');
+    if (action !== 'withdraw' && !/^[1-9]\d*$/.test(id)) throw new Error('أدخل رقم صفقة صحيحًا.');
     status('أكّد العملية في المحفظة: ' + label);
     let tx;
     if (action === 'release') tx = await escrow.voteRelease(BigInt(id));
