@@ -5,7 +5,7 @@ A development monorepo for Wathiq Escrow. **This repository is still under devel
 ## Components
 
 - `contracts/WathiqEscrow.sol`: native-BNB escrow with 2-of-3 decisions and pull withdrawals.
-- `contracts/WathiqUSDTEscrow.sol`: new ERC-20 escrow primitive with exact-received-amount checking, 2-of-3 decisions, pull withdrawals, and a 30-day unresolved-deal refund to the buyer. It is unaudited and only suitable for local/testnet validation. The timeout is a product-policy choice and must be reviewed.
+- `contracts/WathiqUSDTEscrow.sol`: separate experimental ERC-20 escrow primitive. It is not connected to the current website, and its timeout policy needs independent review before any use.
 - `test/`: Hardhat tests for BNB escrow and ERC-20 escrow flows, including participant validation, conflicting votes, settlement, pull withdrawals and timeout refunds. `contracts/test/MockUSDT.sol` is a worthless test token only.
 - `api/`: Express API with email/password registration and login, scrypt password hashing, signed bearer tokens, owner-protected offer closure, input validation, basic per-IP throttles, and PostgreSQL persistence when `DATABASE_URL` is configured. In development without a database it uses in-memory data only. Production startup refuses to run without PostgreSQL and a `JWT_SECRET` of at least 32 characters. This is not yet a complete escrow backend.
 - `web/`: responsive Arabic-first public site plus an admin dashboard at `/admin.html`. The dashboard signs in through the API, checks the database-backed administrator role, and can inspect users/offers and close offers. Wallet detection does not imply contract integration.
@@ -47,7 +47,7 @@ Contract tests use Hardhat's local EVM. A passing local test suite does **not** 
 
 ### Render deployment
 
-`render.yaml` defines both the API and the static web app. In the Render Blueprint setup, provide a persistent PostgreSQL `DATABASE_URL` for the API and the actual web origin for API `CORS_ORIGIN`. The static site build accepts `WATHIQ_API_BASE_URL`, `WATHIQ_ESCROW_ADDRESS`, and `WATHIQ_TOKEN_ADDRESS`; keep chain ID at `97` for testnet. The Render Blueprint now provisions `wathiq-escrow-api`, associates the `wathiq-escrow-db` database, and deploys `wathiq-escrow-web`. Confirm `/health` and exercise registration, login, and offer creation after every deployment. The free Render database is temporary and expires unless upgraded; do not treat this configuration as durable production infrastructure.
+`render.yaml` defines both the API and the static web app. In the Render Blueprint setup, provide a persistent PostgreSQL `DATABASE_URL` for the API and the actual web origin for API `CORS_ORIGIN`. The static site build accepts `WATHIQ_API_BASE_URL` and `WATHIQ_ESCROW_ADDRESS`; the current website uses native tBNB on testnet chain ID `97`, not an ERC-20 token address. The Render Blueprint now provisions `wathiq-escrow-api`, associates the `wathiq-escrow-db` database, and deploys `wathiq-escrow-web`. Confirm `/health` and exercise registration, login, and offer creation after every deployment. The free Render database is temporary and expires unless upgraded; do not treat this configuration as durable production infrastructure.
 
 ## Android APK
 
