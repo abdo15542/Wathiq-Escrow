@@ -1,33 +1,380 @@
 <!doctype html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101827"><title>واثق | Wathiq Escrow</title><link rel="stylesheet" href="styles.css"></head>
-<body><header class="top"><a class="brand" href="index.html"><span class="mark">و</span><span>واثق <small>WATHIQ ESCROW</small></span></a><nav><a href="#market">السوق</a><a href="#onchain">الضمان على الشبكة</a><a href="#how">كيف يعمل؟</a></nav><button id="connect" type="button">صفقات الضمان</button></header>
-<main><section class="hero"><div><p class="eyebrow">BNB SMART CHAIN · ESCROW 2-OF-3</p><h1>اشترِ وبِع بثقة.<br><em>الوسيط يحمي أموالك.</em></h1><p class="lead">صفقات رقمية بضمان عقد ذكي، وسجل واضح للموافقات. ابدأ على شبكة الاختبار قبل استخدام أموال حقيقية.</p><div class="actions"><a class="primary" href="#market">استكشف السوق</a><a class="secondary" href="#how">كيف يحميك الضمان؟</a></div><p class="notice">نسخة تطوير — لا ترسل أموالًا حقيقية. لم يُنشر العقد بعد.</p></div><div class="escrow-card"><div class="card-head"><span>حالة الضمان</span><span class="pill">شبكة اختبار</span></div><div class="amount">1.00 <small>BNB</small></div><div class="flow"><span>المشتري</span><b>2 من 3</b><span>البائع</span></div><div class="progress"><i></i></div><p>لا تُحرّر الأموال إلا بعد تصويتين متوافقين.</p><div class="mini-steps"><span>✓ إيداع</span><span>◷ موافقة</span><span>○ تسوية</span></div></div></section>
-<section id="how" class="section"><p class="eyebrow">خطوات واضحة</p><h2>كيف تعمل الصفقة؟</h2><div class="grid"><article><b>01</b><h3>أنشئ الصفقة</h3><p>حدد البائع والمحكّم والمبلغ قبل الإيداع.</p></article><article><b>02</b><h3>أودع في العقد</h3><p>يُقفل مبلغ BNB في عقد الضمان على الشبكة.</p></article><article><b>03</b><h3>صوّت للتسوية</h3><p>موافقتان من الأطراف الثلاثة تحرّران المبلغ أو تعيدانه.</p></article></div></section>
-<section id="account" class="section market">
-  <p class="eyebrow">ACCOUNT</p><h2>حساب المستخدم</h2>
-  <p>أنشئ حسابًا أو سجّل الدخول لإنشاء عروض السوق. كلمة المرور تُخزّن مجزأة على الخادم، ورمز الجلسة يبقى في جلسة المتصفح الحالية.</p>
-  <form id="authForm">
-    <select id="authMode" name="mode"><option value="register">إنشاء حساب</option><option value="login">تسجيل الدخول</option></select>
-    <input id="displayName" name="displayName" placeholder="الاسم الظاهر" minlength="2" maxlength="80">
-    <input name="email" type="email" autocomplete="email" placeholder="البريد الإلكتروني" required>
-    <input name="password" type="password" autocomplete="current-password" minlength="10" placeholder="كلمة المرور (10 أحرف على الأقل)" required>
-    <button type="submit">متابعة</button>
-  </form>
-  <p id="accountStatus" role="status">لم تسجّل الدخول.</p>
-  <div class="actions"><button id="refreshMyOffers" type="button" class="secondary">عرض عروضي</button></div>
-  <div id="myOffers" class="offers" aria-live="polite">سجّل الدخول لعرض عروضك.</div>
-  <button id="logoutWeb" type="button" class="secondary">تسجيل الخروج</button>
-</section>
-<section id="market" class="section market"><div><p class="eyebrow">سوق العروض</p><h2>سوق العروض</h2></div><form id="offerForm"><input name="title" placeholder="عنوان العرض" minlength="3" maxlength="100" required><input name="price" type="number" min="0.000001" step="any" placeholder="السعر" required><select name="paymentMethod" required><option value="bank_transfer">تحويل بنكي</option><option value="crypto">عملة رقمية</option><option value="cash">نقدًا خارج المنصة</option><option value="digital_service">خدمة رقمية</option><option value="gift_card">بطاقة هدايا</option></select><button type="submit">نشر العرض</button></form><p id="status" role="status">العروض تُحفظ في الخادم عند اتصال API وقاعدة البيانات. نشر عرض لا يعني تنفيذ صفقة أو حجز أموال.</p><div id="offers" class="offers"></div></section>
-<section id="onchain" class="section market">
-  <p class="eyebrow">ON-CHAIN ESCROW · NATIVE BNB</p>
-  <h2>صفقات الضمان على الشبكة</h2>
-  <p class="notice">هذا التكامل متوافق مع عقد الضمان الحالي الذي يقفل BNB الأصلي على شبكة BNB الاختبارية. يلزم ضبط عنوان العقد المنشور الصحيح قبل الاستخدام. استخدم BNB الاختباري فقط؛ لا ترسل أموالًا حقيقية.</p>
-  <div class="actions"><button id="connectWallet" type="button">ربط محفظة الاختبار</button><button id="loadMyEscrowDeals" type="button" class="secondary">عرض صفقاتي على الشبكة</button><button id="withdrawEscrow" type="button" class="secondary">سحب رصيد BNB المستحق</button></div>
-  <div class="grid">
-    <article><h3>إنشاء صفقة</h3><label for="sellerAddress">عنوان البائع</label><input id="sellerAddress" placeholder="0x..." autocomplete="off"><label for="arbiterAddress">عنوان المحكّم</label><input id="arbiterAddress" placeholder="0x..." autocomplete="off"><label for="escrowAmount">مبلغ BNB الاختباري</label><input id="escrowAmount" type="number" min="0.000000000000000001" step="any" placeholder="مثال: 0.01"><button id="createEscrowDeal" type="button">إيداع BNB وإنشاء الصفقة</button></article>
-    <article><h3>متابعة الصفقة</h3><label for="dealId">رقم الصفقة</label><input id="dealId" type="number" min="1" step="1" placeholder="1"><button id="readEscrowDeal" type="button">قراءة الحالة من العقد</button><button id="voteRelease" type="button" class="secondary">تصويت لتحرير المبلغ</button><button id="voteRefund" type="button" class="secondary">تصويت لاسترداد المبلغ</button></article>
-    <article><h3>نتيجة الشبكة</h3><p id="escrowStatus" role="status">لم يتم ربط المحفظة بعد.</p><pre id="escrowDetails" class="chain-details">لا توجد بيانات بعد.</pre></article>
-  </div>
-</section>
-</main><footer>© Wathiq Escrow · مشروع أولي مفتوح للتطوير · لا تستخدم أموالًا حقيقية</footer><script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script><script src="config.js"></script><script src="app.js"></script><script src="escrow.js"></script></body></html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b1020" />
+    <title>ضمانة | Dhamana Escrow</title>
+    <meta
+      name="description"
+      content="ضمانة منصة وساطة ضامنة لبيع وشراء العملات الرقمية بثقة، مع محفظة ضمان ذكية، تحكيم فوري، ومزايا سوقية متقدمة."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="container nav">
+        <a class="brand" href="#top" aria-label="ضمانة الصفحة الرئيسية">
+          <span class="mark">ض</span>
+          <span class="brand-copy">
+            <strong>ضمانة</strong>
+            <small>Dhamana</small>
+          </span>
+        </a>
+        <nav aria-label="التنقل الرئيسي">
+          <a href="#market">السوق</a>
+          <a href="#how">كيف تعمل</a>
+          <a href="#features">الميزات</a>
+          <a href="#account">الحساب</a>
+          <a href="#onchain">الصفقات على الشبكة</a>
+        </nav>
+        <button id="connect" type="button" class="primary">ابدأ الآن</button>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero section">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <div class="eyebrow">منصة وسيط ضامن · secure escrow marketplace</div>
+            <h1>
+              اشترِ وبِع بثقة…
+              <span>الوسيط يحمي أموالك.</span>
+            </h1>
+            <p class="lead">
+              منصة تداول لدعم العملات الرقمية بين الأفراد والتجار، بدون تبادل مباشر للأموال. تفتح غرفة صفقة آمنة،
+              وتضع أصل البائع في محفظة ضمان ذكية متعددة التوقيعات، مع إشراف تحكيم عند أي خلاف.
+            </p>
+            <div class="cta-row">
+              <button type="button" class="primary large" onclick="document.getElementById('market').scrollIntoView({behavior:'smooth'})">
+                تصفح السوق
+              </button>
+              <button type="button" class="secondary large" onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">
+                كيف تعمل
+              </button>
+            </div>
+            <ul class="trust-line" aria-label="إحصاءات المنصة">
+              <li><strong>98.7%</strong><span>نسبة إنهاء الصفقات بنجاح</span></li>
+              <li><strong>24/7</strong><span>لجنة تحكيم ودعم</span></li>
+              <li><strong>2-of-3</strong><span>محفظة ضمان متعددة التوقيعات</span></li>
+            </ul>
+          </div>
+
+          <div class="hero-panel" aria-label="لوحة منصة ضمانة">
+            <div class="panel-top">
+              <span class="badge success">حالة الصفقة: آمنة</span>
+              <span class="mini-pill">Escrow live</span>
+            </div>
+
+            <div class="deal-card glow">
+              <div class="deal-row">
+                <span>البائع</span>
+                <strong>1,250 USDT</strong>
+              </div>
+              <div class="deal-row muted">
+                <span>الشراء</span>
+                <strong>سعر 1.02 USD / USDT</strong>
+              </div>
+              <div class="deal-row">
+                <span>طريقة الدفع</span>
+                <strong>تحويل بنكي</strong>
+              </div>
+              <div class="progress-wrap">
+                <div class="progress-meta">
+                  <span>تأمين الضمان</span>
+                  <span>100%</span>
+                </div>
+                <div class="progress-bar"><span></span></div>
+              </div>
+            </div>
+
+            <div class="mini-grid">
+              <article>
+                <small>قيمة الضمان</small>
+                <strong>1,275$</strong>
+              </article>
+              <article>
+                <small>رسوم الصفقة</small>
+                <strong>0.9%</strong>
+              </article>
+              <article>
+                <small>التحكيم</small>
+                <strong>24-48h</strong>
+              </article>
+              <article>
+                <small>التقييم</small>
+                <strong>4.9/5</strong>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="stats section slim">
+        <div class="container stats-grid">
+          <div><strong>5.4K+</strong><span>معاملات آمنة</span></div>
+          <div><strong>1.2M</strong><span>USD من حجم التبادل الشهري</span></div>
+          <div><strong>320+</strong><span>تاجر موثّق</span></div>
+          <div><strong>12 ms</strong><span>مؤشر الأسعار الفوري</span></div>
+        </div>
+      </section>
+
+      <section id="how" class="section alt">
+        <div class="container">
+          <div class="section-heading">
+            <div class="eyebrow">كيف تعمل المنصة؟</div>
+            <h2>من إنشاء العرض إلى التسوية الآمنة</h2>
+          </div>
+
+          <div class="steps-grid">
+            <article class="step-card">
+              <span class="step-no">01</span>
+              <h3>تسجيل وثائق الحساب</h3>
+              <p>يقوم المستخدم بالتسجيل وتوثيق هويته بحسب حجم الصفقة، مع تدرج مستوى التحقق بحسب المخاطر.</p>
+            </article>
+            <article class="step-card">
+              <span class="step-no">02</span>
+              <h3>إنشاء العرض</h3>
+              <p>يضع البائع أو المشتري تفاصيل العملة، الكمية، السعر، طريقة الدفع، والحدود المقبولة.</p>
+            </article>
+            <article class="step-card">
+              <span class="step-no">03</span>
+              <h3>فتح غرفة الصفقة</h3>
+              <p>عند الموافقة، تبدأ غرفة محادثة مشفرة مع وثائق الصفقة وتاريخها المؤقت.</p>
+            </article>
+            <article class="step-card">
+              <span class="step-no">04</span>
+              <h3>قفل الأصول</h3>
+              <p>يتم تأمين أصل البائع داخل محفظة ضمان ذكية متعددة التوقيعات 2-of-3.</p>
+            </article>
+            <article class="step-card">
+              <span class="step-no">05</span>
+              <h3>إثبات الدفع</h3>
+              <p>يرفع المشتري الدليل البنكي أو الإلكتروني، ويؤكد البائع الاستلام قبل تحرير الضمان.</p>
+            </article>
+            <article class="step-card">
+              <span class="step-no">06</span>
+              <h3>تحكيم عند النزاع</h3>
+              <p>إذا حدث خلاف، تنظر لجنة التحكيم في الأدلة وتقرر خلال 24–48 ساعة.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="section">
+        <div class="container">
+          <div class="section-heading">
+            <div class="eyebrow">لماذا ضمانة فريدة؟</div>
+            <h2>نظام يحمي الأطراف ويعزز الثقة</h2>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature-card">
+              <div class="icon">◎</div>
+              <h3>وسيط ضامن حقيقي</h3>
+              <p>لا تحتفظ المنصة بأرصدة المستخدمين، بل تدير الضمان فقط أثناء الصفقة وبدقة وشفافية.</p>
+            </article>
+            <article class="feature-card">
+              <div class="icon">↔</div>
+              <h3>مقايضة متعددة</h3>
+              <p>عملة مقابل عملة، عملة مقابل تحويل بنكي، خدمة رقمية، بطاقات هدايا، أو سلع رقمية.</p>
+            </article>
+            <article class="feature-card">
+              <div class="icon">⚙</div>
+              <h3>مزاد عكسي ذكي</h3>
+              <p>يضع المشتري سعره، ويخوض البائعون تنافسًا تلقائيًا، مع مؤشر سعر آني يوضح القيمة الحقيقية.</p>
+            </article>
+            <article class="feature-card">
+              <div class="icon">👥</div>
+              <h3>صفقات جماعية</h3>
+              <p>تجميع المشترين لشراء كميات كبيرة بأسعار أفضل، مع تقسيم الأصول تلقائيًا داخل المحفظة الضامنة.</p>
+            </article>
+            <article class="feature-card">
+              <div class="icon">AI</div>
+              <h3>وسيط ذكي</h3>
+              <p>يحلل السوق، يقترح سعرًا عادلًا، ويعطي تنبيهات عند السلوك المشبوه أو محاولات الاحتيال.</p>
+            </article>
+            <article class="feature-card">
+              <div class="icon">★</div>
+              <h3>سمعة موثوقة</h3>
+              <p>التقييمات مرتبطة فقط بالصفقات المكتملة، مع شارات توثيق للبائعين المحترفين والفرق الموثوقة.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="market" class="section alt market-section">
+        <div class="container">
+          <div class="section-heading">
+            <div class="eyebrow">السوق</div>
+            <h2>جميع الصفقات المرئية في لحظة واحدة</h2>
+          </div>
+
+          <div class="market-shell">
+            <aside class="market-panel">
+              <div class="filter-head">
+                <h3>تصفية العروض</h3>
+                <button type="button" class="secondary tiny">تحديث</button>
+              </div>
+              <label>
+                <span>العملة</span>
+                <select>
+                  <option>USDT</option>
+                  <option>BNB</option>
+                  <option>BTC</option>
+                  <option>ETH</option>
+                </select>
+              </label>
+              <label>
+                <span>طريقة الدفع</span>
+                <select>
+                  <option>كل الطرق</option>
+                  <option>تحويل بنكي</option>
+                  <option>محفظة إلكترونية</option>
+                  <option>بطاقة هدايا</option>
+                </select>
+              </label>
+              <label>
+                <span>النطاق السعري</span>
+                <input type="range" min="0" max="100" value="65" />
+              </label>
+            </aside>
+
+            <div class="offers-panel">
+              <div class="market-header">
+                <h3>أحدث العروض</h3>
+                <span id="status" class="status-pill">جارٍ الاتصال بالخادم…</span>
+              </div>
+              <div id="offers" class="offers-list" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="account" class="section market">
+        <div class="container">
+          <div class="section-heading">
+            <div class="eyebrow">الحساب</div>
+            <h2>أنشئ حسابك وابدأ بـعرضك الأول</h2>
+          </div>
+
+          <form id="authForm" class="panel-form">
+            <select id="authMode" name="mode">
+              <option value="register">إنشاء حساب</option>
+              <option value="login">تسجيل الدخول</option>
+            </select>
+            <input id="displayName" name="displayName" type="text" placeholder="الاسم الظاهر" minlength="2" maxlength="80" />
+            <input name="email" type="email" placeholder="البريد الإلكتروني" autocomplete="email" required />
+            <input name="password" type="password" placeholder="كلمة المرور (10 أحرف على الأقل)" autocomplete="current-password" minlength="10" required />
+            <button type="submit">متابعة</button>
+          </form>
+
+          <p id="accountStatus" class="account-status" role="status">لم تسجّل الدخول بعد.</p>
+
+          <div class="account-actions">
+            <button id="refreshMyOffers" type="button" class="secondary">عرض عروضي</button>
+            <button id="logoutWeb" type="button" class="ghost">تسجيل الخروج</button>
+          </div>
+
+          <div id="myOffers" class="offers-list compact" aria-live="polite">سجّل الدخول لعرض عروضك.</div>
+        </div>
+      </section>
+
+      <section id="pricing" class="section alt">
+        <div class="container">
+          <div class="section-heading">
+            <div class="eyebrow">نموذج الربح</div>
+            <h2>رسوم شفافة ومربحة لكل طرف</h2>
+          </div>
+
+          <div class="pricing-grid">
+            <article>
+              <h3>عمولة الصفقة</h3>
+              <strong>0.5% – 1.5%</strong>
+              <p>مستندة إلى قيمة الصفقة ومدى المخاطر، مع خصومات للمشاريع بناءً على حجم التداول.</p>
+            </article>
+            <article>
+              <h3>اشتراك البائعين</h3>
+              <strong>شهري</strong>
+              <p>باقات مميزة للبائعين المحترفين مع خبرة، ترخيص، وامتيازات سريعة في السوق.</p>
+            </article>
+            <article>
+              <h3>رسوم الخدمات</h3>
+              <strong>توثيق واحتراف</strong>
+              <p>رسوم توثيق، تحكيم، سحب سريع، ومتابعة صفقة متقدمة للمحلات والمتاجر.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="onchain" class="section">
+        <div class="container">
+          <div class="section-heading">
+            <div class="eyebrow">الصفقات على الشبكة</div>
+            <h2>محفظة ضمان ذكية متعددة التوقيعات</h2>
+          </div>
+
+          <div class="onchain-grid">
+            <article class="chain-card">
+              <h3>إنشاء صفقة</h3>
+              <label for="sellerAddress">عنوان البائع</label>
+              <input id="sellerAddress" type="text" placeholder="0x..." autocomplete="off" />
+              <label for="arbiterAddress">عنوان المحكم</label>
+              <input id="arbiterAddress" type="text" placeholder="0x..." autocomplete="off" />
+              <label for="buyerAddress">عنوان المشتري</label>
+              <input id="buyerAddress" type="text" placeholder="0x..." autocomplete="off" />
+              <button type="button" class="primary">إنشاء صفقة ضامنة</button>
+            </article>
+
+            <article class="chain-card">
+              <h3>متابعة الصفقة</h3>
+              <label for="dealId">رقم الصفقة</label>
+              <input id="dealId" type="number" min="1" step="1" placeholder="1" />
+              <button id="readEscrowDeal" type="button" class="secondary">قراءة تفاصيل الصفقة</button>
+              <button id="loadMyEscrowDeals" type="button" class="ghost">عرض صفقاتي</button>
+            </article>
+
+            <article class="chain-card">
+              <h3>نتيجة الشبكة</h3>
+              <p id="escrowStatus" class="chain-status" role="status">لم يتم ربط المحفظة بعد.</p>
+              <pre id="escrowDetails" class="chain-details">لا توجد بيانات حتى الآن.</pre>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section cta-block">
+        <div class="container cta-box">
+          <div>
+            <div class="eyebrow">جاهز للابتكار؟</div>
+            <h2>أطلق تجربة تداول آمنة ومريحة بواجهة عربية عصرية.</h2>
+          </div>
+          <button type="button" class="primary large" onclick="document.getElementById('account').scrollIntoView({behavior:'smooth'})">
+            ابدأ الآن
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <div>
+          <strong>ضمانة</strong>
+          <small>الوسيط يحمي أموالك.</small>
+        </div>
+        <div class="footer-links">
+          <a href="#market">السوق</a>
+          <a href="#features">الميزات</a>
+          <a href="#onchain">الصفقات</a>
+        </div>
+        <div>© 2026 Dhamana • secure escrow marketplace</div>
+      </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
