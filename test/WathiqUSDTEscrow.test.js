@@ -129,4 +129,37 @@ describe("WathiqUSDTEscrow", function () {
     expect(await feeToken.balanceOf(await feeEscrow.getAddress())).to.equal(0);
     expect(await feeEscrow.nextDealId()).to.equal(1);
   });
+
+  it("settles correctly for every pair of the three participants", async () => {
+    await token.mint(buyer.address, amount * 2n);
+    await token.connect(buyer).approve(await escrow.getAddress(), amount * 6n);
+
+    const cases = [
+      { voters: [buyer, seller], decision: "release", status: 2, recipient: seller.address },
+      { voters: [buyer, arbiter], decision: "release", status: 2, recipient: seller.address },
+      { voters: [seller, arbiter], decision: "release", status: 2, recipient: seller.address },
+      { voters: [buyer, seller], decision: "refund", status: 3, recipient: buyer.address },
+      { voters: [buyer, arbiter], decision: "refund", status: 3, recipient: buyer.address },
+      { voters: [seller, arbiter], decision: "refund", status: 3, recipient: buyer.address },
+    ];
+
+    for (let index = 0; index < cases.length; index += 1) {
+      const scenario = cases[index];
+      const dealId = index + 1;
+      await escrow.connect(buyer).createDeal(seller.address, arbiter.address, amount);
+      for (const voter of scenario.voters) {
+        await escrow.connect(voter)[scenario.decision === "release" ? "voteRelease" : "voteRefund"](dealId);
+      }
+      const deal = await escrow.getDeal(dealId);
+      expect(deal.status).to.equal(scenario.status);
+      expect(deal.amount).to.equal(0);
+      expect(await escrow.pendingWithdrawals(scenario.recipient)).to.equal(amount * BigInt(
+        cases.slice(0, index + 1).filter(item => item.recipient === scenario.recipient).length
+      ));
+    }
+
+    expect(await escrow.pendingWithdrawals(seller.address)).to.equal(amount * 3n);
+    expect(await escrow.pendingWithdrawals(buyer.address)).to.equal(amount * 3n);
+  });
+
 });
