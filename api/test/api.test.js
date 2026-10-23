@@ -308,3 +308,30 @@ test('pagination offsets reject malformed and unsafe values instead of silently 
   assert.equal(cappedBoundary.status, 200);
   assert.equal((await cappedBoundary.json()).offset, 1000000);
 });
+
+
+test('health readiness confirms PostgreSQL connectivity and hides database errors', async t => {
+  const unavailablePool = {
+    query: async () => { throw new Error('sensitive connection details must not leak'); },
+  };
+  const unavailableBase = await withServer(t, createApp({ pool: unavailablePool }));
+  const unavailable = await fetch(unavailableBase + '/health');
+  assert.equal(unavailable.status, 503);
+  assert.deepEqual(await unavailable.json(), {
+    status: 'error',
+    service: 'wathiq-api',
+    database: 'unavailable',
+  });
+
+  const connectedPool = {
+    query: async () => ({ rows: [{ '?column?': 1 }] }),
+  };
+  const connectedBase = await withServer(t, createApp({ pool: connectedPool }));
+  const connected = await fetch(connectedBase + '/health');
+  assert.equal(connected.status, 200);
+  assert.deepEqual(await connected.json(), {
+    status: 'ok',
+    service: 'wathiq-api',
+    database: 'connected',
+  });
+});
