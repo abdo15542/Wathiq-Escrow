@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - fix/mobile-api-production-config
     paths:
       - ".github/workflows/production-smoke.yml"
