@@ -2,30 +2,20 @@
   const cfg = window.WATHIQ_CONFIG || {};
   const statusEl = document.getElementById('escrowStatus');
   const outputEl = document.getElementById('escrowDetails');
-  const tokenAbi = [
-    'function decimals() view returns (uint8)',
-    'function symbol() view returns (string)',
-    'function mint(address to,uint256 amount)',
-    'function approve(address spender,uint256 amount) returns (bool)',
-    'function balanceOf(address account) view returns (uint256)',
-    'function allowance(address owner,address spender) view returns (uint256)'
-  ];
   const escrowAbi = [
-    'function token() view returns (address)',
-    'function createDeal(address seller,address arbiter,uint256 amount) returns (uint256)',
+    'function createDeal(address payable seller,address arbiter) payable returns (uint256 dealId)',
     'function voteRelease(uint256 dealId)',
     'function voteRefund(uint256 dealId)',
     'function withdraw()',
-    'function refundExpired(uint256 dealId)',
     'function getDeal(uint256 dealId) view returns (tuple(address buyer,address seller,address arbiter,uint256 amount,uint64 createdAt,uint8 status,uint8 releaseVotes,uint8 refundVotes))',
     'function pendingWithdrawals(address account) view returns (uint256)',
     'event DealCreated(uint256 indexed dealId,address indexed buyer,address indexed seller,address arbiter,uint256 amount)',
     'event DealSettled(uint256 indexed dealId,uint8 status,address indexed recipient,uint256 amount)'
   ];
+
   let provider;
   let signer;
   let account;
-  let token;
   let escrow;
   let walletListenersAttached = false;
 
@@ -33,131 +23,113 @@
     statusEl.textContent = message;
     statusEl.style.color = isError ? '#ff9d9d' : '';
   }
+
   function invalidateWallet(message) {
+    provider = null;
     signer = null;
     account = null;
-    token = null;
     escrow = null;
     status(message, true);
   }
-  function onAccountsChanged(accounts) {
-    invalidateWallet(Array.isArray(accounts) && accounts.length
-      ? 'تغيّر حساب المحفظة. أعد ربط المحفظة قبل أي عملية.'
-      : 'تم فصل المحفظة. أعد ربطها للمتابعة.');
-  }
-  function onChainChanged(chainId) {
-    const nextChainId = typeof chainId === 'string' ? Number.parseInt(chainId, 16) : Number(chainId);
-    invalidateWallet(nextChainId === 97
-      ? 'تغيّرت الشبكة. أعد ربط المحفظة للتحقق من العقد والشبكة.'
-      : 'قفل أمان: تغيّرت الشبكة عن BNB Smart Chain Testnet. أعد ربط المحفظة.');
-  }
-  function onWalletDisconnected() {
-    invalidateWallet('انقطع اتصال المحفظة. أعد ربطها قبل المتابعة.');
-  }
-  function attachWalletListeners() {
-    if (walletListenersAttached || !window.ethereum || typeof window.ethereum.on !== 'function') return;
-    window.ethereum.on('accountsChanged', onAccountsChanged);
-    window.ethereum.on('chainChanged', onChainChanged);
-    window.ethereum.on('disconnect', onWalletDisconnected);
-    walletListenersAttached = true;
-  }
+
   function requireConfig() {
-    if (!window.ethers) throw new Error('تعذر تحميل مكتبة المحفظة. تحقق من اتصال الإنترنت ثم أعد المحاولة.');
-    // Hard safety lock: this UI is not approved for mainnet or real-value tokens.
-    // Even if deployment variables are misconfigured, never initiate a mainnet transaction.
-    if (Number(cfg.chainId || 97) !== 97) throw new Error('قفل أمان: هذا الإصدار يعمل على BNB Smart Chain Testnet فقط، والمعاملات على الشبكة الرئيسية معطلة.');
-    if (!cfg.escrowAddress || !cfg.tokenAddress || !window.ethers.isAddress(cfg.escrowAddress) || !window.ethers.isAddress(cfg.tokenAddress)) {
-      throw new Error('لم تُضبط عناوين عقد الضمان ورمز ERC-20 بعد. انشر نسخة الاختبار واضبط WATHIQ_ESCROW_ADDRESS وWATHIQ_TOKEN_ADDRESS.');
+    if (!window.ethers) throw new Error('تعذر تحميل مكتبة المحفظة. تحقق من الاتصال ثم أعد المحاولة.');
+    if (Number(cfg.chainId || 97) !== 97) {
+      throw new Error('قفل أمان: هذا الإصدار مخصص لشبكة BNB Smart Chain Testnet فقط.');
+    }
+    if (!cfg.escrowAddress || !ethers.isAddress(cfg.escrowAddress)) {
+      throw new Error('عنوان عقد الضمان غير مضبوط. انشر عقد WathiqEscrow على شبكة الاختبار ثم اضبط WATHIQ_ESCROW_ADDRESS.');
     }
   }
+
   async function connect() {
     requireConfig();
     if (!window.ethereum) throw new Error('يلزم متصفح يدعم محفظة EVM مثل MetaMask.');
     provider = new ethers.BrowserProvider(window.ethereum);
     await provider.send('eth_requestAccounts', []);
     let network = await provider.getNetwork();
-    if (Number(network.chainId) !== Number(cfg.chainId || 97)) {
+    if (Number(network.chainId) !== 97) {
       try {
-        await provider.send('wallet_switchEthereumChain', [{ chainId: '0x' + Number(cfg.chainId || 97).toString(16) }]);
+        await provider.send('wallet_switchEthereumChain', [{ chainId: '0x61' }]);
       } catch (error) {
         if (error.code !== 4902) throw error;
         await provider.send('wallet_addEthereumChain', [{
-          chainId: '0x' + Number(cfg.chainId || 97).toString(16),
-          chainName: cfg.chainName || 'BNB Smart Chain Testnet',
-          nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
+          chainId: '0x61',
+          chainName: 'BNB Smart Chain Testnet',
+          nativeCurrency: { name: 'Test BNB', symbol: 'tBNB', decimals: 18 },
           rpcUrls: [cfg.rpcUrl || 'https://bsc-testnet-dataseed.bnbchain.org'],
           blockExplorerUrls: [cfg.explorerUrl || 'https://testnet.bscscan.com']
         }]);
       }
       provider = new ethers.BrowserProvider(window.ethereum);
       network = await provider.getNetwork();
-      if (Number(network.chainId) !== Number(cfg.chainId || 97)) throw new Error('اختر الشبكة الصحيحة أولًا.');
+      if (Number(network.chainId) !== 97) throw new Error('اختر BNB Smart Chain Testnet في المحفظة أولًا.');
     }
     signer = await provider.getSigner();
     account = await signer.getAddress();
-    token = new ethers.Contract(cfg.tokenAddress, tokenAbi, signer);
     escrow = new ethers.Contract(cfg.escrowAddress, escrowAbi, signer);
-    const contractToken = await escrow.token();
-    if (contractToken.toLowerCase() !== cfg.tokenAddress.toLowerCase()) throw new Error('عنوان الرمز لا يطابق الرمز المثبت داخل عقد الضمان.');
-    const tokenSymbol = await token.symbol();
-    if (tokenSymbol !== 'mUSDT') throw new Error('قفل أمان: الرمز المتصل ليس mUSDT التجريبي؛ لن تُنفّذ أي معاملة.');
+    // Verify the configured address contains contract code before enabling transactions.
+    const code = await provider.getCode(cfg.escrowAddress);
+    if (!code || code === '0x') throw new Error('لا يوجد عقد منشور في العنوان المضبوط على شبكة الاختبار.');
     attachWalletListeners();
-    status('تم ربط المحفظة ' + account.slice(0, 6) + '…' + account.slice(-4) + ' على شبكة الاختبار باستخدام mUSDT التجريبي.');
+    status('تم ربط المحفظة ' + account.slice(0, 6) + '…' + account.slice(-4) + ' على شبكة الاختبار. الضمان يستخدم BNB الاختباري الأصلي، لا رمز ERC-20.');
     await refreshBalance();
   }
+
+  function attachWalletListeners() {
+    if (walletListenersAttached || !window.ethereum || typeof window.ethereum.on !== 'function') return;
+    window.ethereum.on('accountsChanged', accounts => invalidateWallet(
+      Array.isArray(accounts) && accounts.length ? 'تغيّر حساب المحفظة. أعد ربطها قبل المتابعة.' : 'تم فصل المحفظة. أعد ربطها قبل المتابعة.'
+    ));
+    window.ethereum.on('chainChanged', chainId => invalidateWallet(
+      Number.parseInt(chainId, 16) === 97 ? 'تغيّرت الشبكة؛ أعد ربط المحفظة للتحقق من الإعدادات.' : 'قفل أمان: اختر BNB Smart Chain Testnet ثم أعد ربط المحفظة.'
+    ));
+    window.ethereum.on('disconnect', () => invalidateWallet('انقطع اتصال المحفظة. أعد ربطها قبل المتابعة.'));
+    walletListenersAttached = true;
+  }
+
   async function ensureConnected() {
     if (!signer) {
       await connect();
       return;
     }
-    // Wallets can switch networks after connection. Re-check before every read/write action.
     const network = await provider.getNetwork();
     if (Number(network.chainId) !== 97) {
-      signer = null; account = null; token = null; escrow = null;
-      throw new Error('قفل أمان: تغيّرت الشبكة. أعد ربط المحفظة على BNB Smart Chain Testnet قبل المتابعة.');
+      invalidateWallet('قفل أمان: تغيّرت الشبكة. أعد ربط المحفظة على شبكة الاختبار.');
+      throw new Error('المعاملات مسموحة على شبكة الاختبار فقط.');
     }
     const currentAccount = await signer.getAddress();
     if (!account || currentAccount.toLowerCase() !== account.toLowerCase()) {
-      signer = null; account = null; token = null; escrow = null;
-      throw new Error('تغيّر حساب المحفظة. أعد ربط المحفظة قبل المتابعة.');
+      invalidateWallet('تغيّر حساب المحفظة. أعد ربط المحفظة.');
+      throw new Error('تغيّر حساب المحفظة.');
     }
+    const code = await provider.getCode(cfg.escrowAddress);
+    if (!code || code === '0x') throw new Error('لم يعد عنوان عقد الضمان يحتوي على عقد على الشبكة الحالية.');
   }
-  async function mintTestTokens() {
-    await ensureConnected();
-    if (Number(cfg.chainId || 97) !== 97) throw new Error('إنشاء رموز الاختبار مسموح فقط على BSC Testnet.');
-    const symbol = await token.symbol();
-    if (symbol !== 'mUSDT') throw new Error('هذا العنوان ليس رمز MockUSDT التجريبي؛ لن يتم إنشاء أي رموز.');
-    const decimals = await token.decimals();
-    status('أكّد إنشاء 1000 رمز اختبار مجاني في المحفظة…');
-    const tx = await token.mint(account, ethers.parseUnits('1000', decimals));
-    await tx.wait();
-    status('تم إصدار 1000 mUSDT تجريبية على شبكة الاختبار. هذه الرموز لا قيمة مالية لها. المعاملة: ' + tx.hash);
-    await refreshBalance();
-  }
+
   async function refreshBalance() {
-    if (!token || !account) return;
-    const decimals = await token.decimals();
-    const balance = await token.balanceOf(account);
+    if (!provider || !account || !escrow) return;
+    const balance = await provider.getBalance(account);
     const pending = await escrow.pendingWithdrawals(account);
-    outputEl.textContent = 'المحفظة: ' + account + '\nرصيد رمز الاختبار: ' + ethers.formatUnits(balance, decimals) +
-      '\nالمبلغ القابل للسحب من الضمان: ' + ethers.formatUnits(pending, decimals) +
+    outputEl.textContent = 'المحفظة: ' + account +
+      '\nرصيد BNB الاختباري: ' + ethers.formatEther(balance) +
+      '\nالمبلغ المستحق للسحب: ' + ethers.formatEther(pending) + ' BNB' +
       '\nعقد الضمان: ' + cfg.escrowAddress;
   }
+
   async function createDeal() {
     await ensureConnected();
     const seller = document.getElementById('sellerAddress').value.trim();
     const arbiter = document.getElementById('arbiterAddress').value.trim();
     const amountText = document.getElementById('escrowAmount').value.trim();
     if (!ethers.isAddress(seller) || !ethers.isAddress(arbiter)) throw new Error('أدخل عنواني محفظة صحيحين للبائع والمحكّم.');
-    if (seller.toLowerCase() === account.toLowerCase() || arbiter.toLowerCase() === account.toLowerCase() || seller.toLowerCase() === arbiter.toLowerCase()) throw new Error('يجب أن تكون المحافظ الثلاث مختلفة.');
-    const decimals = await token.decimals();
-    const amount = ethers.parseUnits(amountText, decimals);
-    if (amount <= 0n) throw new Error('أدخل مبلغًا موجبًا.');
-    status('يرجى تأكيد موافقة الرمز في المحفظة…');
-    const approval = await token.approve(cfg.escrowAddress, amount);
-    await approval.wait();
-    status('تمت الموافقة. أكّد إنشاء صفقة الضمان في المحفظة…');
-    const tx = await escrow.createDeal(seller, arbiter, amount);
+    if (seller.toLowerCase() === account.toLowerCase() || arbiter.toLowerCase() === account.toLowerCase() || seller.toLowerCase() === arbiter.toLowerCase()) {
+      throw new Error('يجب أن تكون محافظ المشتري والبائع والمحكّم ثلاث محافظ مختلفة.');
+    }
+    if (!amountText || !Number.isFinite(Number(amountText)) || Number(amountText) <= 0) throw new Error('أدخل مبلغ BNB اختباري موجبًا.');
+    const amount = ethers.parseEther(amountText);
+    status('أكّد إيداع BNB الاختباري وإنشاء الصفقة في المحفظة…');
+    const tx = await escrow.createDeal(seller, arbiter, { value: amount });
     const receipt = await tx.wait();
     let dealId = '';
     for (const log of receipt.logs) {
@@ -166,105 +138,101 @@
         if (parsed && parsed.name === 'DealCreated') dealId = parsed.args.dealId.toString();
       } catch (_) {}
     }
-    status('تم إنشاء صفقة على الشبكة. رقم الصفقة: ' + (dealId || 'راجع مستكشف الكتل') + ' — المعاملة: ' + tx.hash);
-    document.getElementById('dealId').value = dealId;
+    status('تم إنشاء صفقة الضمان على شبكة الاختبار. رقم الصفقة: ' + (dealId || 'راجع مستكشف الكتل') + ' — المعاملة: ' + tx.hash);
+    if (dealId) document.getElementById('dealId').value = dealId;
     await refreshBalance();
     if (dealId) await readDeal();
   }
+
   async function readDeal() {
     await ensureConnected();
     const id = document.getElementById('dealId').value.trim();
-    if (!/^[1-9]\d*$/.test(id)) throw new Error('أدخل رقم صفقة صحيحًا.');
+    if (!/^[1-9]\\d*$/.test(id)) throw new Error('أدخل رقم صفقة صحيحًا.');
     const d = await escrow.getDeal(BigInt(id));
-    const decimals = await token.decimals();
     const states = ['غير موجودة', 'مموّلة', 'محررة للبائع', 'مستردة للمشتري'];
-    const created = new Date(Number(d.createdAt) * 1000).toLocaleString();
     outputEl.textContent = 'رقم الصفقة: ' + id +
       '\nالمشتري: ' + d.buyer + '\nالبائع: ' + d.seller + '\nالمحكّم: ' + d.arbiter +
-      '\nالمبلغ: ' + ethers.formatUnits(d.amount, decimals) + '\nالحالة: ' + (states[Number(d.status)] || 'غير معروفة') +
-      '\nأصوات التحرير: ' + d.releaseVotes + '\nأصوات الاسترداد: ' + d.refundVotes + '\nتاريخ الإنشاء: ' + created;
-    status('تم جلب حالة الصفقة مباشرة من العقد.');
+      '\nالمبلغ: ' + ethers.formatEther(d.amount) + ' BNB' +
+      '\nالحالة: ' + (states[Number(d.status)] || 'غير معروفة') +
+      '\nأصوات التحرير: ' + d.releaseVotes + '\nأصوات الاسترداد: ' + d.refundVotes +
+      '\nتاريخ الإنشاء: ' + new Date(Number(d.createdAt) * 1000).toLocaleString();
+    status('تم جلب حالة الصفقة مباشرة من عقد الضمان.');
   }
+
   async function loadMyEscrowDeals() {
     await ensureConnected();
-    status('جارٍ البحث عن صفقات هذه المحفظة في آخر 10000 كتلة…');
+    status('جارٍ البحث عن صفقات المحفظة في آخر 10000 كتلة…');
     const latestBlock = await provider.getBlockNumber();
     const fromBlock = Math.max(0, latestBlock - 10000);
-    // Public RPC endpoints may reject wide eth_getLogs ranges. Query bounded
-    // chunks and merge results so the history view works across stricter providers.
     const chunkSize = 2000;
-    // The event indexes buyer and seller, but not arbiter. Read the bounded
-    // event range once and filter all three roles locally so arbiters also see
-    // deals assigned to them.
-    const dealCreatedFilter = escrow.filters.DealCreated();
+    const filter = escrow.filters.DealCreated();
     const unique = new Map();
     for (let start = fromBlock; start <= latestBlock; start += chunkSize) {
       const end = Math.min(start + chunkSize - 1, latestBlock);
-      const events = await escrow.queryFilter(dealCreatedFilter, start, end);
+      const events = await escrow.queryFilter(filter, start, end);
       for (const event of events) {
         if (!event.args) continue;
         const args = event.args;
-        const isParticipant = [args.buyer, args.seller, args.arbiter]
-          .some(address => typeof address === 'string' && address.toLowerCase() === account.toLowerCase());
-        if (isParticipant) unique.set(args.dealId.toString(), args);
+        if ([args.buyer, args.seller, args.arbiter].some(address =>
+          typeof address === 'string' && address.toLowerCase() === account.toLowerCase())) {
+          unique.set(args.dealId.toString(), args);
+        }
       }
     }
     const ids = [...unique.keys()].sort((a, b) => BigInt(a) > BigInt(b) ? -1 : BigInt(a) < BigInt(b) ? 1 : 0).slice(0, 50);
     if (!ids.length) {
-      outputEl.textContent = 'لم تُعثر على صفقات مشتري/بائع لهذه المحفظة في آخر 10000 كتلة. قد تكون الصفقة أقدم من نطاق البحث.';
+      outputEl.textContent = 'لم تُعثر على صفقات لهذه المحفظة في آخر 10000 كتلة. قد تكون الصفقة أقدم من نطاق البحث.';
       status('اكتمل البحث؛ لم تُعثر على صفقات ضمن نطاق البحث.');
       return;
     }
-    const decimals = await token.decimals();
     const states = ['غير موجودة', 'مموّلة', 'محررة للبائع', 'مستردة للمشتري'];
     const rows = await Promise.all(ids.map(async id => {
-      const deal = await escrow.getDeal(BigInt(id));
-      return 'الصفقة #' + id + ' · ' + states[Number(deal.status)] +
-        ' · المبلغ: ' + ethers.formatUnits(deal.amount, decimals) +
-        ' mUSDT · الدور: ' + (deal.buyer.toLowerCase() === account.toLowerCase()
-          ? 'مشتري'
-          : deal.seller.toLowerCase() === account.toLowerCase() ? 'بائع' : 'محكّم');
+      const d = await escrow.getDeal(BigInt(id));
+      const role = d.buyer.toLowerCase() === account.toLowerCase()
+        ? 'مشتري'
+        : d.seller.toLowerCase() === account.toLowerCase() ? 'بائع' : 'محكّم';
+      return 'الصفقة #' + id + ' · ' + (states[Number(d.status)] || 'غير معروفة') +
+        ' · المبلغ: ' + ethers.formatEther(d.amount) + ' BNB · الدور: ' + role;
     }));
     outputEl.textContent = 'صفقات المحفظة (آخر 10000 كتلة، بحد أقصى 50 صفقة):\n' + rows.join('\n') +
-      '\n\nللتصويت أو قراءة التفاصيل، انسخ رقم الصفقة إلى حقل «رقم الصفقة» ثم اختر الإجراء.';
+      '\n\nانسخ رقم الصفقة إلى الحقل المخصص لقراءة تفاصيلها أو التصويت.';
     status('تم تحميل ' + rows.length + ' صفقة من عقد الاختبار.');
   }
+
   async function transact(action, label) {
     await ensureConnected();
     const id = document.getElementById('dealId').value.trim();
-    if (action !== 'withdraw' && !/^[1-9]\d*$/.test(id)) throw new Error('أدخل رقم صفقة صحيحًا.');
+    if (action !== 'withdraw' && !/^[1-9]\\d*$/.test(id)) throw new Error('أدخل رقم صفقة صحيحًا.');
     status('أكّد العملية في المحفظة: ' + label);
     let tx;
     if (action === 'release') tx = await escrow.voteRelease(BigInt(id));
     else if (action === 'refund') tx = await escrow.voteRefund(BigInt(id));
-    else if (action === 'expire') tx = await escrow.refundExpired(BigInt(id));
     else tx = await escrow.withdraw();
     await tx.wait();
-    status('نجحت العملية على الشبكة. المعاملة: ' + tx.hash);
+    status('نجحت العملية على شبكة الاختبار. المعاملة: ' + tx.hash);
     await refreshBalance();
     if (action !== 'withdraw') await readDeal();
   }
+
   function bind(id, fn, label) {
-    document.getElementById(id).addEventListener('click', async () => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('click', async () => {
       try { await fn(); } catch (error) { status(error.shortMessage || error.message || label, true); }
     });
   }
+
   bind('connectWallet', connect, 'تعذر ربط المحفظة');
   bind('loadMyEscrowDeals', loadMyEscrowDeals, 'تعذر تحميل صفقات المحفظة');
-  bind('mintTestTokens', mintTestTokens, 'تعذر إصدار رموز الاختبار');
   bind('createEscrowDeal', createDeal, 'تعذر إنشاء الصفقة');
   bind('readEscrowDeal', readDeal, 'تعذر قراءة الصفقة');
   bind('voteRelease', () => transact('release', 'التصويت لتحرير المبلغ'), 'تعذر التصويت');
   bind('voteRefund', () => transact('refund', 'التصويت لاسترداد المبلغ'), 'تعذر التصويت');
-  bind('refundExpired', () => transact('expire', 'استرداد الصفقة المنتهية'), 'تعذر الاسترداد');
   bind('withdrawEscrow', () => transact('withdraw', 'سحب الرصيد المستحق'), 'تعذر السحب');
 
-  if (window.ethereum && typeof window.ethereum.on === 'function') {
-    const resetWallet = message => {
-      provider = null; signer = null; account = null; token = null; escrow = null;
-      status(message, true);
-    };
-    window.ethereum.on('chainChanged', () => resetWallet('تغيّرت الشبكة؛ أعد ربط المحفظة على شبكة الاختبار.'));
-    window.ethereum.on('accountsChanged', () => resetWallet('تغيّر حساب المحفظة؛ أعد ربط المحفظة.'));
+  // Remove controls for features that the deployed native-BNB contract does not implement.
+  for (const id of ['mintTestTokens', 'refundExpired']) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = true;
   }
 })();
