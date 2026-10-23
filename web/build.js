@@ -11,7 +11,6 @@ for (const file of ['index.html', 'styles.css', 'app.js', 'admin.html', 'escrow.
 const config = {
   apiBaseUrl: process.env.WATHIQ_API_BASE_URL || '',
   escrowAddress: process.env.WATHIQ_ESCROW_ADDRESS || '',
-  tokenAddress: process.env.WATHIQ_TOKEN_ADDRESS || '',
   chainId: Number(process.env.WATHIQ_CHAIN_ID || 97),
   chainName: process.env.WATHIQ_CHAIN_NAME || 'BNB Smart Chain Testnet',
   rpcUrl: process.env.WATHIQ_RPC_URL || 'https://bsc-testnet-dataseed.bnbchain.org',
@@ -19,4 +18,4 @@ const config = {
 };
 fs.writeFileSync(path.join(out, 'config.js'), 'window.WATHIQ_CONFIG = ' + JSON.stringify(config, null, 2) + ';\n');
 console.log('Static web bundle built. API endpoint configured:', Boolean(config.apiBaseUrl));
-console.log('Escrow addresses configured:', Boolean(config.escrowAddress && config.tokenAddress));
+console.log('Escrow contract address configured:', Boolean(config.escrowAddress));
