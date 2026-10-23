@@ -190,13 +190,21 @@
     status('جارٍ البحث عن صفقات هذه المحفظة في آخر 10000 كتلة…');
     const latestBlock = await provider.getBlockNumber();
     const fromBlock = Math.max(0, latestBlock - 10000);
-    const [asBuyer, asSeller] = await Promise.all([
-      escrow.queryFilter(escrow.filters.DealCreated(null, account, null), fromBlock, latestBlock),
-      escrow.queryFilter(escrow.filters.DealCreated(null, null, account), fromBlock, latestBlock)
-    ]);
+    // Public RPC endpoints may reject wide eth_getLogs ranges. Query bounded
+    // chunks and merge results so the history view works across stricter providers.
+    const chunkSize = 2000;
+    const buyerFilter = escrow.filters.DealCreated(null, account, null);
+    const sellerFilter = escrow.filters.DealCreated(null, null, account);
     const unique = new Map();
-    for (const event of [...asBuyer, ...asSeller]) {
-      if (event.args) unique.set(event.args.dealId.toString(), event.args);
+    for (let start = fromBlock; start <= latestBlock; start += chunkSize) {
+      const end = Math.min(start + chunkSize - 1, latestBlock);
+      const [asBuyer, asSeller] = await Promise.all([
+        escrow.queryFilter(buyerFilter, start, end),
+        escrow.queryFilter(sellerFilter, start, end)
+      ]);
+      for (const event of [...asBuyer, ...asSeller]) {
+        if (event.args) unique.set(event.args.dealId.toString(), event.args);
+      }
     }
     const ids = [...unique.keys()].sort((a, b) => BigInt(a) > BigInt(b) ? -1 : BigInt(a) < BigInt(b) ? 1 : 0).slice(0, 50);
     if (!ids.length) {
