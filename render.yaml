@@ -5,7 +5,7 @@ services:
     plan: free
     region: oregon
     repo: https://github.com/abdo15542/Wathiq-Escrow
-    branch: fix/mobile-api-production-config
+    branch: main
     rootDir: api
     buildCommand: npm install --no-audit --no-fund
     startCommand: npm start
@@ -28,7 +28,7 @@ services:
     name: wathiq-escrow-web
     runtime: static
     repo: https://github.com/abdo15542/Wathiq-Escrow
-    branch: fix/mobile-api-production-config
+    branch: main
     rootDir: web
     buildCommand: npm run build
     staticPublishPath: dist
