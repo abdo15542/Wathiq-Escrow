@@ -226,7 +226,15 @@ function createApp(options = {}) {
       // Reject malformed or excessive credentials before scrypt; malformed JSON types must not become 500s.
       if (password === null || password.length > 200) return res.status(401).json({ error: 'invalid email or password' });
       const user = await findUserByEmail(email);
-      if (!user || !(await verifyPassword(password, user.password_salt, user.password_hash))) return res.status(401).json({ error: 'invalid email or password' });
+      if (!user) {
+        // Perform the same expensive password-hash operation for unknown accounts
+        // so response timing reveals less about whether an email is registered.
+        await scrypt(password, 'wathiq-login-dummy-salt', 64);
+        return res.status(401).json({ error: 'invalid email or password' });
+      }
+      if (!(await verifyPassword(password, user.password_salt, user.password_hash))) {
+        return res.status(401).json({ error: 'invalid email or password' });
+      }
       const safeUser = userFromRow(user);
       const issuedAt = Math.floor(now() / 1000);
       const token = signToken({ sub: safeUser.id, role: safeUser.role, iat: issuedAt, exp: issuedAt + TOKEN_TTL_SECONDS }, tokenSecret);
