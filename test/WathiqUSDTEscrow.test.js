@@ -73,6 +73,27 @@ describe("WathiqUSDTEscrow", function () {
     expect(await token.balanceOf(buyer.address)).to.equal(amount * 4n);
   });
 
+  it("allows anyone to trigger timeout refund only at the 30-day boundary", async () => {
+    await makeDeal();
+    const deal = await escrow.getDeal(1);
+    const expiry = Number(deal.createdAt) + 30 * 24 * 60 * 60;
+
+    // The refund must still be rejected one second before the exact expiry.
+    await ethers.provider.send("evm_setNextBlockTimestamp", [expiry - 1]);
+    await expect(escrow.connect(outsider).refundExpired(1))
+      .to.be.revertedWithCustomError(escrow, "DealNotExpired");
+
+    // The next mined transaction is at or after the 30-day boundary.
+    await expect(escrow.connect(outsider).refundExpired(1))
+      .to.emit(escrow, "ExpiredDealRefunded")
+      .withArgs(1, buyer.address, amount);
+
+    const settled = await escrow.getDeal(1);
+    expect(settled.status).to.equal(3);
+    expect(settled.amount).to.equal(0);
+    expect(await escrow.pendingWithdrawals(buyer.address)).to.equal(amount);
+  });
+
   it("rejects zero amounts and invalid participants", async () => {
     await expect(escrow.connect(buyer).createDeal(seller.address, arbiter.address, 0)).to.be.revertedWithCustomError(escrow, "InvalidAmount");
     await expect(escrow.connect(buyer).createDeal(buyer.address, arbiter.address, amount)).to.be.revertedWithCustomError(escrow, "InvalidAddress");
