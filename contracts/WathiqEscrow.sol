@@ -94,7 +94,7 @@ contract WathiqEscrow {
 
     function _settle(uint256 dealId, Deal storage d, Decision decision) private {
         uint256 amount = d.amount;
-        d.amount = 0;
+        // Keep the original deal amount for history; status prevents any second settlement.
         address recipient;
         if (decision == Decision.Release) {
             d.status = Status.Released;

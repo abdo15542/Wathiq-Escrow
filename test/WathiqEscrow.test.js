@@ -30,6 +30,7 @@ describe("WathiqEscrow", function () {
     expect((await escrow.getDeal(1)).status).to.equal(1);
     await expect(escrow.connect(arbiter).voteRelease(1)).to.emit(escrow, "DealSettled");
     expect((await escrow.getDeal(1)).status).to.equal(2);
+    expect((await escrow.getDeal(1)).amount).to.equal(amount);
     expect(await escrow.pendingWithdrawals(seller.address)).to.equal(amount);
     await expect(escrow.connect(seller).withdraw()).to.emit(escrow, "Withdrawal").withArgs(seller.address, amount);
     expect(await escrow.pendingWithdrawals(seller.address)).to.equal(0);
@@ -39,6 +40,7 @@ describe("WathiqEscrow", function () {
     await escrow.connect(seller).voteRefund(1);
     await escrow.connect(arbiter).voteRefund(1);
     expect((await escrow.getDeal(1)).status).to.equal(3);
+    expect((await escrow.getDeal(1)).amount).to.equal(amount);
     expect(await escrow.pendingWithdrawals(buyer.address)).to.equal(amount);
     await escrow.connect(buyer).withdraw();
     expect(await escrow.pendingWithdrawals(buyer.address)).to.equal(0);
