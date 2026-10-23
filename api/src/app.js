@@ -98,7 +98,9 @@ async function ensureSchema(pool) {
     "payment_method TEXT NOT NULL CHECK (payment_method IN ('bank_transfer','cash','crypto','digital_service','gift_card')), " +
     "status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());" +
     'CREATE INDEX IF NOT EXISTS wathiq_offers_created_idx ON wathiq_offers (created_at DESC);' +
-    'CREATE INDEX IF NOT EXISTS wathiq_offers_asset_status_idx ON wathiq_offers (asset, status);'
+    'CREATE INDEX IF NOT EXISTS wathiq_offers_asset_status_idx ON wathiq_offers (asset, status);' +
+    'CREATE INDEX IF NOT EXISTS wathiq_offers_owner_created_idx ON wathiq_offers (owner_id, created_at DESC);' +
+    'CREATE INDEX IF NOT EXISTS wathiq_offers_status_created_idx ON wathiq_offers (status, created_at DESC)'
   );
 }
 
