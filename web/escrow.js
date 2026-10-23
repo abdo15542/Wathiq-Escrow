@@ -212,8 +212,8 @@
         ' · المبلغ: ' + ethers.formatUnits(deal.amount, decimals) +
         ' mUSDT · الدور: ' + (deal.buyer.toLowerCase() === account.toLowerCase() ? 'مشتري' : 'بائع');
     }));
-    outputEl.textContent = 'صفقات المحفظة (آخر 10000 كتلة، بحد أقصى 50 صفقة):\\n' + rows.join('\\n') +
-      '\\n\\nللتصويت أو قراءة التفاصيل، انسخ رقم الصفقة إلى حقل «رقم الصفقة» ثم اختر الإجراء.';
+    outputEl.textContent = 'صفقات المحفظة (آخر 10000 كتلة، بحد أقصى 50 صفقة):\n' + rows.join('\n') +
+      '\n\nللتصويت أو قراءة التفاصيل، انسخ رقم الصفقة إلى حقل «رقم الصفقة» ثم اختر الإجراء.';
     status('تم تحميل ' + rows.length + ' صفقة من عقد الاختبار.');
   }
   async function transact(action, label) {
