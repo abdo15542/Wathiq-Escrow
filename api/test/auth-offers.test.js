@@ -64,6 +64,7 @@ test('login safely rejects malformed credentials and incorrect passwords', async
   }));
   await register(base, 'login@example.com');
   for (const body of [
+    { email: 'missing@example.com', password: 'wrong-password' },
     { email: 'login@example.com', password: 'wrong-password' },
     { email: 'login@example.com', password: 123 },
     { email: 'login@example.com', password: 'x'.repeat(201) },
