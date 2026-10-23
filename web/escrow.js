@@ -185,6 +185,37 @@
       '\nأصوات التحرير: ' + d.releaseVotes + '\nأصوات الاسترداد: ' + d.refundVotes + '\nتاريخ الإنشاء: ' + created;
     status('تم جلب حالة الصفقة مباشرة من العقد.');
   }
+  async function loadMyEscrowDeals() {
+    await ensureConnected();
+    status('جارٍ البحث عن صفقات هذه المحفظة في آخر 10000 كتلة…');
+    const latestBlock = await provider.getBlockNumber();
+    const fromBlock = Math.max(0, latestBlock - 10000);
+    const [asBuyer, asSeller] = await Promise.all([
+      escrow.queryFilter(escrow.filters.DealCreated(null, account, null), fromBlock, latestBlock),
+      escrow.queryFilter(escrow.filters.DealCreated(null, null, account), fromBlock, latestBlock)
+    ]);
+    const unique = new Map();
+    for (const event of [...asBuyer, ...asSeller]) {
+      if (event.args) unique.set(event.args.dealId.toString(), event.args);
+    }
+    const ids = [...unique.keys()].sort((a, b) => BigInt(a) > BigInt(b) ? -1 : BigInt(a) < BigInt(b) ? 1 : 0).slice(0, 50);
+    if (!ids.length) {
+      outputEl.textContent = 'لم تُعثر على صفقات مشتري/بائع لهذه المحفظة في آخر 10000 كتلة. قد تكون الصفقة أقدم من نطاق البحث.';
+      status('اكتمل البحث؛ لم تُعثر على صفقات ضمن نطاق البحث.');
+      return;
+    }
+    const decimals = await token.decimals();
+    const states = ['غير موجودة', 'مموّلة', 'محررة للبائع', 'مستردة للمشتري'];
+    const rows = await Promise.all(ids.map(async id => {
+      const deal = await escrow.getDeal(BigInt(id));
+      return 'الصفقة #' + id + ' · ' + states[Number(deal.status)] +
+        ' · المبلغ: ' + ethers.formatUnits(deal.amount, decimals) +
+        ' mUSDT · الدور: ' + (deal.buyer.toLowerCase() === account.toLowerCase() ? 'مشتري' : 'بائع');
+    }));
+    outputEl.textContent = 'صفقات المحفظة (آخر 10000 كتلة، بحد أقصى 50 صفقة):\n' + rows.join('\n') +
+      '\n\nللتصويت أو قراءة التفاصيل، انسخ رقم الصفقة إلى حقل «رقم الصفقة» ثم اختر الإجراء.';
+    status('تم تحميل ' + rows.length + ' صفقة من عقد الاختبار.');
+  }
   async function transact(action, label) {
     await ensureConnected();
     const id = document.getElementById('dealId').value.trim();
@@ -206,6 +237,7 @@
     });
   }
   bind('connectWallet', connect, 'تعذر ربط المحفظة');
+  bind('loadMyEscrowDeals', loadMyEscrowDeals, 'تعذر تحميل صفقات المحفظة');
   bind('mintTestTokens', mintTestTokens, 'تعذر إصدار رموز الاختبار');
   bind('createEscrowDeal', createDeal, 'تعذر إنشاء الصفقة');
   bind('readEscrowDeal', readDeal, 'تعذر قراءة الصفقة');
