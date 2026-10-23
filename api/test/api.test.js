@@ -314,6 +314,24 @@ test('rejects bearer tokens that declare a different signing algorithm even with
   }
 });
  
+test('rejects tampered JWT payloads and non-positive or malformed subjects', async t => {
+  const { signToken } = require('../src/app');
+  const secret = 'test-secret-long-enough-for-subject-validation';
+  const base = await withServer(t, createApp({ tokenSecret: secret }));
+  const payloads = [
+    { sub: 0, role: 'user', iat: 1, exp: 9999999999 },
+    { sub: -1, role: 'user', iat: 1, exp: 9999999999 },
+    { sub: '1', role: 'user', iat: 1, exp: 9999999999 },
+    { sub: 1.5, role: 'user', iat: 1, exp: 9999999999 },
+  ];
+  for (const payload of payloads) {
+    const response = await fetch(base + '/api/auth/me', {
+      headers: { authorization: 'Bearer ' + signToken(payload, secret) },
+    });
+    assert.equal(response.status, 401);
+  }
+});
+ 
 test('pagination offsets reject malformed and unsafe values instead of silently normalizing them', async t => {
   const base = await withServer(t, createApp());
 
