@@ -293,6 +293,27 @@ test('limits authentication attempts per client and resets after the window', as
 });
 
 
+test('rejects bearer tokens that declare a different signing algorithm even with a valid HMAC', async t => {
+  const crypto = require('node:crypto');
+  const { signToken } = require('../src/app');
+  const secret = 'test-secret-long-enough-for-algorithm-check';
+  const base = await withServer(t, createApp({ tokenSecret: secret }));
+  const payload = { sub: 1, role: 'admin', iat: 1, exp: 9999999999 };
+  const valid = signToken(payload, secret);
+  const [header, body] = valid.split('.');
+  const forgedHeader = Buffer.from(JSON.stringify({ alg: 'HS512', typ: 'JWT' })).toString('base64url');
+  const unsigned = forgedHeader + '.' + body;
+  const signature = crypto.createHmac('sha256', secret).update(unsigned).digest('base64url');
+  const wrongAlgorithm = unsigned + '.' + signature;
+
+  for (const token of [wrongAlgorithm, valid + '!', 'a.b.c', 'x'.repeat(8193)]) {
+    const response = await fetch(base + '/api/auth/me', {
+      headers: { authorization: 'Bearer ' + token },
+    });
+    assert.equal(response.status, 401);
+  }
+});
+ 
 test('pagination offsets reject malformed and unsafe values instead of silently normalizing them', async t => {
   const base = await withServer(t, createApp());
 
