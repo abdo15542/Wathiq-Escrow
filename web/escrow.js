@@ -193,17 +193,20 @@
     // Public RPC endpoints may reject wide eth_getLogs ranges. Query bounded
     // chunks and merge results so the history view works across stricter providers.
     const chunkSize = 2000;
-    const buyerFilter = escrow.filters.DealCreated(null, account, null);
-    const sellerFilter = escrow.filters.DealCreated(null, null, account);
+    // The event indexes buyer and seller, but not arbiter. Read the bounded
+    // event range once and filter all three roles locally so arbiters also see
+    // deals assigned to them.
+    const dealCreatedFilter = escrow.filters.DealCreated();
     const unique = new Map();
     for (let start = fromBlock; start <= latestBlock; start += chunkSize) {
       const end = Math.min(start + chunkSize - 1, latestBlock);
-      const [asBuyer, asSeller] = await Promise.all([
-        escrow.queryFilter(buyerFilter, start, end),
-        escrow.queryFilter(sellerFilter, start, end)
-      ]);
-      for (const event of [...asBuyer, ...asSeller]) {
-        if (event.args) unique.set(event.args.dealId.toString(), event.args);
+      const events = await escrow.queryFilter(dealCreatedFilter, start, end);
+      for (const event of events) {
+        if (!event.args) continue;
+        const args = event.args;
+        const isParticipant = [args.buyer, args.seller, args.arbiter]
+          .some(address => typeof address === 'string' && address.toLowerCase() === account.toLowerCase());
+        if (isParticipant) unique.set(args.dealId.toString(), args);
       }
     }
     const ids = [...unique.keys()].sort((a, b) => BigInt(a) > BigInt(b) ? -1 : BigInt(a) < BigInt(b) ? 1 : 0).slice(0, 50);
@@ -218,7 +221,9 @@
       const deal = await escrow.getDeal(BigInt(id));
       return 'الصفقة #' + id + ' · ' + states[Number(deal.status)] +
         ' · المبلغ: ' + ethers.formatUnits(deal.amount, decimals) +
-        ' mUSDT · الدور: ' + (deal.buyer.toLowerCase() === account.toLowerCase() ? 'مشتري' : 'بائع');
+        ' mUSDT · الدور: ' + (deal.buyer.toLowerCase() === account.toLowerCase()
+          ? 'مشتري'
+          : deal.seller.toLowerCase() === account.toLowerCase() ? 'بائع' : 'محكّم');
     }));
     outputEl.textContent = 'صفقات المحفظة (آخر 10000 كتلة، بحد أقصى 50 صفقة):\n' + rows.join('\n') +
       '\n\nللتصويت أو قراءة التفاصيل، انسخ رقم الصفقة إلى حقل «رقم الصفقة» ثم اختر الإجراء.';
