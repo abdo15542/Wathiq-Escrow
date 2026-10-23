@@ -37,8 +37,6 @@ services:
         value: https://wathiq-escrow-api.onrender.com
       - key: WATHIQ_ESCROW_ADDRESS
         value: ""
-      - key: WATHIQ_TOKEN_ADDRESS
-        value: ""
       - key: WATHIQ_CHAIN_ID
         value: "97"
       - key: WATHIQ_CHAIN_NAME

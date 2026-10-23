@@ -78,6 +78,7 @@ jobs:
           node --check web/app.js
           node --check web/escrow.js
           node --check web/build.js
+          node --check scripts/deploy-testnet-suite.js
 
       - name: Build web assets
         run: npm run build:web

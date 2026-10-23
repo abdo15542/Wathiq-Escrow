@@ -59,8 +59,21 @@ jobs:
       - name: Publish verified deployment details
         if: success()
         run: |
-          node -e "const d=require('./deployments/bsc-testnet.json'); const fs=require('fs'); fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '## Wathiq BSC Testnet deployment\\n\\n- Chain ID: 97\\n- Test token: ['+d.token.address+']('+d.explorer.token+')\\n- Escrow: ['+d.escrow.address+']('+d.explorer.escrow+')\\n\\n**Testnet only. mUSDT has no monetary value; contract is unaudited.**\\n');"
-
+          node <<'NODE'
+          const d = require('./deployments/bsc-testnet.json');
+          const fs = require('node:fs');
+          const summary = [
+            '## Wathiq BNB Testnet deployment',
+            '',
+            '- Chain ID: 97',
+            '- Native-BNB escrow: [' + d.escrow.address + '](' + d.explorer.escrow + ')',
+            '- Release/refund lifecycle smoke tests: ' + d.smokeTest.status,
+            '',
+            '**Testnet only. tBNB has no mainnet value; contract is unaudited.**',
+            ''
+          ].join('\n');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+          NODE
       - name: Upload deployment manifest
         if: success()
         uses: actions/upload-artifact@v4
