@@ -75,6 +75,169 @@ class Offer {
   }
 }
 
+
+class DealParticipant {
+  final int id;
+  final String email;
+  final String displayName;
+
+  const DealParticipant({required this.id, required this.email, required this.displayName});
+
+  factory DealParticipant.fromJson(Map<String, dynamic> json) {
+    return DealParticipant(
+      id: (json['id'] as num).toInt(),
+      email: json['email'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? '',
+    );
+  }
+}
+
+class Deal {
+  final int id;
+  final int? offerId;
+  final String title;
+  final String asset;
+  final double amount;
+  final String status;
+  final bool dispute;
+  final String? disputeReason;
+  final DealParticipant buyer;
+  final DealParticipant seller;
+  final DealParticipant arbiter;
+  final String? buyerVote;
+  final String? sellerVote;
+  final String? arbiterVote;
+  final String? myRole;
+  final String? fundedAt;
+  final String? deliveredAt;
+  final String? settledAt;
+  final String createdAt;
+  final String? timeoutRefundAt;
+
+  const Deal({
+    required this.id,
+    required this.offerId,
+    required this.title,
+    required this.asset,
+    required this.amount,
+    required this.status,
+    required this.dispute,
+    required this.disputeReason,
+    required this.buyer,
+    required this.seller,
+    required this.arbiter,
+    required this.buyerVote,
+    required this.sellerVote,
+    required this.arbiterVote,
+    required this.myRole,
+    required this.fundedAt,
+    required this.deliveredAt,
+    required this.settledAt,
+    required this.createdAt,
+    required this.timeoutRefundAt,
+  });
+
+  factory Deal.fromJson(Map<String, dynamic> json) {
+    final participants = Map<String, dynamic>.from(json['participants'] as Map);
+    final votes = Map<String, dynamic>.from(json['votes'] as Map? ?? {});
+    return Deal(
+      id: (json['id'] as num).toInt(),
+      offerId: (json['offerId'] as num?)?.toInt(),
+      title: json['title'] as String,
+      asset: json['asset'] as String,
+      amount: (json['amount'] as num).toDouble(),
+      status: json['status'] as String,
+      dispute: json['dispute'] as bool? ?? false,
+      disputeReason: json['disputeReason'] as String?,
+      buyer: DealParticipant.fromJson(Map<String, dynamic>.from(participants['buyer'] as Map)),
+      seller: DealParticipant.fromJson(Map<String, dynamic>.from(participants['seller'] as Map)),
+      arbiter: DealParticipant.fromJson(Map<String, dynamic>.from(participants['arbiter'] as Map)),
+      buyerVote: votes['buyer'] as String?,
+      sellerVote: votes['seller'] as String?,
+      arbiterVote: votes['arbiter'] as String?,
+      myRole: json['myRole'] as String?,
+      fundedAt: json['fundedAt'] as String?,
+      deliveredAt: json['deliveredAt'] as String?,
+      settledAt: json['settledAt'] as String?,
+      createdAt: json['createdAt'] as String? ?? '',
+      timeoutRefundAt: json['timeoutRefundAt'] as String?,
+    );
+  }
+
+  String? get myVote {
+    switch (myRole) {
+      case 'buyer':
+        return buyerVote;
+      case 'seller':
+        return sellerVote;
+      case 'arbiter':
+        return arbiterVote;
+    }
+    return null;
+  }
+}
+
+String dealStatusLabel(String status) {
+  switch (status) {
+    case 'awaiting_funding':
+      return 'بانتظار التمويل';
+    case 'funded':
+      return 'مموّلة — الضمان محتجز';
+    case 'delivered':
+      return 'تم التسليم — بانتظار التسوية';
+    case 'released':
+      return 'مُسوّاة — حُرّر للبائع';
+    case 'refunded':
+      return 'مُسوّاة — رُدّ للمشتري';
+    case 'cancelled':
+      return 'ملغاة';
+  }
+  return status;
+}
+
+String dealRoleLabel(String? role) {
+  switch (role) {
+    case 'buyer':
+      return 'مشترٍ';
+    case 'seller':
+      return 'بائع';
+    case 'arbiter':
+      return 'مُحكِّم';
+  }
+  return '';
+}
+
+/// Action identifiers the signed-in user may perform on [deal] right now.
+/// Mirrors the API rules exactly: role-gated funding/delivery, one vote per
+/// participant while funded or delivered, a single dispute, and the 30-day
+/// timeout refund after funding.
+List<String> dealActionsFor(Deal deal, {DateTime? now}) {
+  final role = deal.myRole;
+  if (role == null) return const [];
+  if (deal.status == 'released' || deal.status == 'refunded' || deal.status == 'cancelled') {
+    return const [];
+  }
+  final actions = <String>[];
+  if (deal.status == 'awaiting_funding') {
+    if (role == 'buyer') actions.add('fund');
+    if (role == 'buyer' || role == 'seller') actions.add('cancel');
+    return actions;
+  }
+  if (deal.status == 'funded' || deal.status == 'delivered') {
+    if (role == 'seller' && deal.status == 'funded') actions.add('deliver');
+    if (deal.myVote == null) {
+      actions.add('voteRelease');
+      actions.add('voteRefund');
+    }
+    if (!deal.dispute) actions.add('dispute');
+    final timeoutAt = deal.timeoutRefundAt == null ? null : DateTime.tryParse(deal.timeoutRefundAt!);
+    if (timeoutAt != null && !(now ?? DateTime.now()).isBefore(timeoutAt)) {
+      actions.add('timeoutRefund');
+    }
+  }
+  return actions;
+}
+
 class WathiqApi {
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
   static String? token;
@@ -226,6 +389,41 @@ class WathiqApi {
       Map<String, dynamic>.from(data['item'] as Map),
     );
   }
+
+  static Future<List<Deal>> getMyDeals() async {
+    final data = await request('GET', '/api/my/deals?limit=50&offset=0');
+    final items = data['items'];
+    if (items is! List) throw Exception('صيغة صفقات الضمان غير صحيحة.');
+    return items.map((item) => Deal.fromJson(Map<String, dynamic>.from(item as Map))).toList();
+  }
+
+  static Future<Deal> createDeal({
+    required String title,
+    required double amount,
+    required String myRole,
+    required String counterpartyEmail,
+    required String arbiterEmail,
+    int? offerId,
+  }) async {
+    final data = await request('POST', '/api/deals', body: {
+      'title': title,
+      'asset': 'BNB',
+      'amount': amount,
+      'myRole': myRole,
+      'counterpartyEmail': counterpartyEmail.trim(),
+      'arbiterEmail': arbiterEmail.trim(),
+      if (offerId != null) 'offerId': offerId,
+    });
+    return Deal.fromJson(Map<String, dynamic>.from(data['item'] as Map));
+  }
+
+  static Future<Deal> dealAction(int id, String action, {String? decision, String? reason}) async {
+    final data = await request('POST', '/api/deals/$id/$action', body: {
+      if (decision != null) 'decision': decision,
+      if (reason != null) 'reason': reason,
+    });
+    return Deal.fromJson(Map<String, dynamic>.from(data['item'] as Map));
+  }
 }
 
 class HomePage extends StatefulWidget {
@@ -239,6 +437,8 @@ class _HomePageState extends State<HomePage> {
   List<Offer> offers = [];
   List<Offer> myOffers = [];
   bool loadingMyOffers = false;
+  List<Deal> myDeals = [];
+  bool loadingDeals = false;
   bool loading = false;
   String? error;
   String info = 'سجّل الدخول لإنشاء عرض؛ تصفح العروض متاح للجميع.';
@@ -260,6 +460,7 @@ class _HomePageState extends State<HomePage> {
       } catch (_) {}
     }
     if (mounted) await loadOffers();
+    if (mounted && WathiqApi.token != null) await loadMyDeals();
   }
 
   Future<void> showAuthDialog() async {
@@ -302,7 +503,11 @@ class _HomePageState extends State<HomePage> {
       ),
     );
     nameController.dispose(); emailController.dispose(); passwordController.dispose();
-    if (success == true && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تسجيل الدخول.')));
+    if (success == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تسجيل الدخول.')));
+      await loadMyOffers();
+      await loadMyDeals();
+    }
   }
 
   Future<void> loadOffers() async {
@@ -548,6 +753,254 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+
+  Future<void> loadMyDeals() async {
+    if (WathiqApi.token == null) return;
+    setState(() => loadingDeals = true);
+    try {
+      final result = await WathiqApi.getMyDeals();
+      if (!mounted) return;
+      setState(() => myDeals = result);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => loadingDeals = false);
+    }
+  }
+
+  Future<void> runDealAction(Deal deal, String action) async {
+    String? decision;
+    String? reason;
+    String apiAction = action;
+    if (action == 'voteRelease' || action == 'voteRefund') {
+      apiAction = 'vote';
+      decision = action == 'voteRelease' ? 'release' : 'refund';
+    }
+    if (action == 'dispute') {
+      final controller = TextEditingController();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('فتح نزاع'),
+          content: TextField(
+            controller: controller,
+            maxLength: 300,
+            decoration: const InputDecoration(labelText: 'سبب النزاع (اختياري)'),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('تراجع')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('فتح النزاع')),
+          ],
+        ),
+      );
+      reason = controller.text.trim();
+      controller.dispose();
+      if (confirmed != true || !mounted) return;
+    } else {
+      const confirmLabels = {
+        'fund': 'تأكيد أنك أودعت مبلغ الضمان؟ ستُعلَّم الصفقة كمموّلة.',
+        'deliver': 'تأكيد أنك سلّمت السلعة أو الخدمة للمشتري؟',
+        'cancel': 'إلغاء هذه الصفقة نهائيًا قبل التمويل؟',
+        'vote': 'صوتك نهائي ولا يمكن تغييره بعد التسجيل.',
+        'timeoutRefund': 'ردّ المبلغ للمشتري لانقضاء 30 يومًا دون تسوية؟',
+      };
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('تأكيد الإجراء'),
+          content: Text(confirmLabels[apiAction] ?? 'متابعة؟'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('تراجع')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('تأكيد')),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    try {
+      final updated = await WathiqApi.dealAction(deal.id, apiAction, decision: decision, reason: reason);
+      await loadMyDeals();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('صفقة ${deal.id}: ${dealStatusLabel(updated.status)}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  Future<void> showCreateDealDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final titleController = TextEditingController();
+    final amountController = TextEditingController();
+    final counterpartyController = TextEditingController();
+    final arbiterController = TextEditingController();
+    final offerIdController = TextEditingController();
+    String myRole = 'buyer';
+    bool saving = false;
+    String? formError;
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('صفقة ضمان جديدة'),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                TextFormField(
+                  controller: titleController,
+                  maxLength: 100,
+                  decoration: const InputDecoration(labelText: 'عنوان الصفقة'),
+                  validator: (v) => (v?.trim().length ?? 0) < 3 ? 'اكتب 3 أحرف على الأقل' : null,
+                ),
+                TextFormField(
+                  controller: amountController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'مبلغ الضمان', suffixText: 'BNB'),
+                  validator: (v) {
+                    final amount = double.tryParse(v?.trim() ?? '');
+                    return (amount == null || !amount.isFinite || amount <= 0 || amount > 1000000000) ? 'أدخل مبلغًا موجبًا صالحًا' : null;
+                  },
+                ),
+                DropdownButtonFormField<String>(
+                  value: myRole,
+                  decoration: const InputDecoration(labelText: 'دوري في الصفقة'),
+                  items: const [
+                    DropdownMenuItem(value: 'buyer', child: Text('أنا المشتري')),
+                    DropdownMenuItem(value: 'seller', child: Text('أنا البائع')),
+                  ],
+                  onChanged: saving ? null : (v) { if (v != null) setDialogState(() => myRole = v); },
+                ),
+                TextFormField(
+                  controller: counterpartyController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'بريد الطرف الآخر (المسجّل في واثق)'),
+                  validator: (v) => !(v ?? '').contains('@') ? 'أدخل بريدًا صحيحًا' : null,
+                ),
+                TextFormField(
+                  controller: arbiterController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'بريد المُحكِّم (طرف ثالث مسجّل)'),
+                  validator: (v) => !(v ?? '').contains('@') ? 'أدخل بريدًا صحيحًا' : null,
+                ),
+                TextFormField(
+                  controller: offerIdController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'رقم عرض مرتبط (اختياري)'),
+                  validator: (v) {
+                    final text = v?.trim() ?? '';
+                    if (text.isEmpty) return null;
+                    final parsed = int.tryParse(text);
+                    return (parsed == null || parsed <= 0) ? 'رقم عرض غير صالح' : null;
+                  },
+                ),
+                if (formError != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(formError!, style: const TextStyle(color: Colors.redAccent))),
+                const SizedBox(height: 8),
+                const Text(
+                  'دورة الضمان: تمويل من المشتري ← تسليم من البائع ← تسوية بتصويت 2 من 3 (أنت والطرف الآخر والمُحكِّم). بعد 30 يومًا دون تسوية يُردّ المبلغ للمشتري.',
+                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+              ]),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: saving ? null : () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
+            FilledButton(
+              onPressed: saving ? null : () async {
+                if (!formKey.currentState!.validate()) return;
+                setDialogState(() { saving = true; formError = null; });
+                try {
+                  await WathiqApi.createDeal(
+                    title: titleController.text.trim(),
+                    amount: double.parse(amountController.text.trim()),
+                    myRole: myRole,
+                    counterpartyEmail: counterpartyController.text,
+                    arbiterEmail: arbiterController.text,
+                    offerId: offerIdController.text.trim().isEmpty ? null : int.parse(offerIdController.text.trim()),
+                  );
+                  if (dialogContext.mounted) Navigator.pop(dialogContext, true);
+                } catch (e) {
+                  setDialogState(() { saving = false; formError = e.toString().replaceFirst('Exception: ', ''); });
+                }
+              },
+              child: Text(saving ? 'جارٍ الإنشاء...' : 'إنشاء الصفقة'),
+            ),
+          ],
+        ),
+      ),
+    );
+    titleController.dispose();
+    amountController.dispose();
+    counterpartyController.dispose();
+    arbiterController.dispose();
+    offerIdController.dispose();
+    if (created == true && mounted) {
+      await loadMyDeals();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إنشاء صفقة الضمان.')));
+    }
+  }
+
+  Widget buildDealCard(Deal deal) {
+    const actionLabels = {
+      'fund': 'تأكيد التمويل',
+      'deliver': 'تأكيد التسليم',
+      'cancel': 'إلغاء الصفقة',
+      'dispute': 'فتح نزاع',
+      'voteRelease': 'صوّت: تحرير للبائع',
+      'voteRefund': 'صوّت: ردّ للمشتري',
+      'timeoutRefund': 'ردّ انقضاء المهلة (30 يومًا)',
+    };
+    String voteText(String? vote) => vote == null ? 'لم يصوّت' : (vote == 'release' ? 'تحرير' : 'ردّ');
+    final actions = dealActionsFor(deal);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text(deal.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                Text('${deal.amount} ${deal.asset}', style: const TextStyle(color: Color(0xFFE8BD6A), fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text('الحالة: ${dealStatusLabel(deal.status)} • دوري: ${dealRoleLabel(deal.myRole)}'),
+            Text('المشتري: ${deal.buyer.email} • البائع: ${deal.seller.email}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            Text('المُحكِّم: ${deal.arbiter.email}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            Text(
+              'الأصوات — المشتري: ${voteText(deal.buyerVote)} • البائع: ${voteText(deal.sellerVote)} • المُحكِّم: ${voteText(deal.arbiterVote)}',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            if (deal.dispute)
+              Text('⚠ نزاع مفتوح${deal.disputeReason != null ? ': ${deal.disputeReason}' : ''}', style: const TextStyle(color: Colors.orangeAccent, fontSize: 12)),
+            if (deal.timeoutRefundAt != null && (deal.status == 'funded' || deal.status == 'delivered'))
+              Text('يُتاح ردّ المهلة بعد: ${deal.timeoutRefundAt!.split('T').first}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            if (actions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: actions.map((action) => FilledButton.tonal(
+                  onPressed: () => runDealAction(deal, action),
+                  child: Text(actionLabels[action] ?? action),
+                )).toList(),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -596,7 +1049,7 @@ class _HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'الضمان على السلسلة قيد الربط',
+                    'صفقات ضمان كاملة داخل التطبيق',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
@@ -604,12 +1057,11 @@ class _HomePageState extends State<HomePage> {
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'تم إعداد عقد ERC-20 للاختبار، لكن هذا التطبيق لا يرسل معاملات ضمان على السلسلة بعد. '
-                    'لتسوية الصفقة.',
+                    'أنشئ صفقة ضمان مع طرف آخر ومُحكِّم مسجّلين: تمويل من المشتري، تسليم من البائع، ثم تسوية بتصويت 2 من 3 — وردّ تلقائي للمشتري بعد 30 يومًا دون تسوية. تُدار الدورة عبر خادم واثق وتعكس قواعد عقد الضمان.',
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'تنبيه: التطبيق الحالي يدير العروض والحسابات فقط، ولا ينفذ ضمانًا على السلسلة.',
+                    'تنبيه: التسوية على السلسلة (شبكة اختبار BNB) تُفعَّل بعد نشر العقود من مالك المشروع. لا تستخدم أموالًا حقيقية أبدًا.',
                     style: TextStyle(color: Color(0xFFE8BD6A)),
                   ),
                 ],
@@ -629,7 +1081,9 @@ class _HomePageState extends State<HomePage> {
             Text('مسجّل الدخول: $signedInEmail', textAlign: TextAlign.center),
             OutlinedButton.icon(onPressed: loading ? null : showCreateOfferDialog, icon: const Icon(Icons.add), label: const Text('إنشاء عرض جديد')),
             OutlinedButton.icon(onPressed: loadingMyOffers ? null : loadMyOffers, icon: const Icon(Icons.inventory_2_outlined), label: Text(loadingMyOffers ? 'جارٍ تحميل عروضي...' : 'عروضي')),
-            TextButton.icon(onPressed: () async { await WathiqApi.logout(); if (mounted) setState(() { signedInEmail = null; info = 'تم تسجيل الخروج.'; }); }, icon: const Icon(Icons.logout), label: const Text('تسجيل الخروج')),
+            OutlinedButton.icon(onPressed: loading ? null : showCreateDealDialog, icon: const Icon(Icons.gavel_outlined), label: const Text('صفقة ضمان جديدة')),
+            OutlinedButton.icon(onPressed: loadingDeals ? null : loadMyDeals, icon: const Icon(Icons.handshake_outlined), label: Text(loadingDeals ? 'جارٍ تحميل الصفقات...' : 'صفقات الضمان')),
+            TextButton.icon(onPressed: () async { await WathiqApi.logout(); if (mounted) setState(() { signedInEmail = null; info = 'تم تسجيل الخروج.'; myDeals = []; myOffers = []; }); }, icon: const Icon(Icons.logout), label: const Text('تسجيل الخروج')),
           ],
           const SizedBox(height: 16),
           if (loading) const LinearProgressIndicator(),
@@ -663,6 +1117,12 @@ class _HomePageState extends State<HomePage> {
                     : const Icon(Icons.check_circle_outline),
               ),
             )),
+          ],
+          if (signedInEmail != null) ...[
+            const SizedBox(height: 18),
+            Text('صفقات الضمان (${myDeals.length})', style: Theme.of(context).textTheme.titleLarge),
+            if (myDeals.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('لا صفقات ضمان بعد — أنشئ أول صفقة لك.', style: TextStyle(color: Colors.white60))),
+            ...myDeals.map(buildDealCard),
           ],
           if (offers.isNotEmpty)
             Text(

@@ -102,12 +102,29 @@ async function ensureSchema(pool) {
     'CREATE INDEX IF NOT EXISTS wathiq_offers_owner_created_idx ON wathiq_offers (owner_id, created_at DESC);' +
     'CREATE INDEX IF NOT EXISTS wathiq_offers_status_created_idx ON wathiq_offers (status, created_at DESC)'
   );
+  await pool.query(
+    'CREATE TABLE IF NOT EXISTS wathiq_deals (' +
+    'id BIGSERIAL PRIMARY KEY, offer_id BIGINT REFERENCES wathiq_offers(id) ON DELETE SET NULL, ' +
+    'title VARCHAR(100) NOT NULL CHECK (char_length(title) BETWEEN 3 AND 100), ' +
+    "asset TEXT NOT NULL CHECK (asset = 'BNB'), amount NUMERIC(30, 10) NOT NULL CHECK (amount > 0), " +
+    'buyer_id BIGINT NOT NULL REFERENCES wathiq_users(id), seller_id BIGINT NOT NULL REFERENCES wathiq_users(id), arbiter_id BIGINT NOT NULL REFERENCES wathiq_users(id), ' +
+    "status TEXT NOT NULL DEFAULT 'awaiting_funding' CHECK (status IN ('awaiting_funding','funded','delivered','released','refunded','cancelled')), " +
+    'dispute BOOLEAN NOT NULL DEFAULT FALSE, dispute_reason VARCHAR(300), ' +
+    "buyer_vote TEXT CHECK (buyer_vote IN ('release','refund')), seller_vote TEXT CHECK (seller_vote IN ('release','refund')), arbiter_vote TEXT CHECK (arbiter_vote IN ('release','refund')), " +
+    'funded_at TIMESTAMPTZ, delivered_at TIMESTAMPTZ, settled_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ' +
+    'CHECK (buyer_id <> seller_id AND buyer_id <> arbiter_id AND seller_id <> arbiter_id));' +
+    'CREATE INDEX IF NOT EXISTS wathiq_deals_buyer_idx ON wathiq_deals (buyer_id, created_at DESC);' +
+    'CREATE INDEX IF NOT EXISTS wathiq_deals_seller_idx ON wathiq_deals (seller_id, created_at DESC);' +
+    'CREATE INDEX IF NOT EXISTS wathiq_deals_arbiter_idx ON wathiq_deals (arbiter_id, created_at DESC);' +
+    'CREATE INDEX IF NOT EXISTS wathiq_deals_status_created_idx ON wathiq_deals (status, created_at DESC)'
+  );
 }
 
 function createApp(options = {}) {
   const app = express();
   const offers = options.offers || [];
   const users = options.users || [];
+  const deals = options.deals || [];
   const createWindow = new Map();
   const authWindow = new Map();
   const now = options.now || (() => Date.now());
@@ -456,6 +473,317 @@ function createApp(options = {}) {
         offer.status = 'closed';
       }
       return res.json({ status: 'closed', id });
+    } catch (error) { return next(error); }
+  });
+
+
+  // ---- Escrow deals -------------------------------------------------------
+  // Off-chain deal lifecycle that mirrors the on-chain escrow rules: three
+  // distinct participants (buyer, seller, arbiter), funds marked as held,
+  // delivery confirmation, then settlement by any 2-of-3 matching votes.
+  // A deal that stays unresolved for 30 days after funding can be refunded
+  // to the buyer by any participant, mirroring the USDT escrow timeout.
+  const DEAL_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000;
+  const dealCreateWindow = new Map();
+
+  function dealRoleOf(deal, userId) {
+    if (Number(deal.buyer_id) === userId) return 'buyer';
+    if (Number(deal.seller_id) === userId) return 'seller';
+    if (Number(deal.arbiter_id) === userId) return 'arbiter';
+    return null;
+  }
+
+  function dealToApi(row, viewerId) {
+    const api = {
+      id: Number(row.id),
+      offerId: row.offer_id == null ? null : Number(row.offer_id),
+      title: row.title,
+      asset: row.asset,
+      amount: Number(row.amount),
+      status: row.status,
+      dispute: row.dispute === true,
+      disputeReason: row.dispute_reason || null,
+      participants: {
+        buyer: { id: Number(row.buyer_id), email: row.buyer_email || '', displayName: row.buyer_name || '' },
+        seller: { id: Number(row.seller_id), email: row.seller_email || '', displayName: row.seller_name || '' },
+        arbiter: { id: Number(row.arbiter_id), email: row.arbiter_email || '', displayName: row.arbiter_name || '' },
+      },
+      votes: { buyer: row.buyer_vote || null, seller: row.seller_vote || null, arbiter: row.arbiter_vote || null },
+      fundedAt: row.funded_at ? new Date(row.funded_at).toISOString() : null,
+      deliveredAt: row.delivered_at ? new Date(row.delivered_at).toISOString() : null,
+      settledAt: row.settled_at ? new Date(row.settled_at).toISOString() : null,
+      createdAt: new Date(row.created_at).toISOString(),
+    };
+    api.timeoutRefundAt = api.fundedAt ? new Date(new Date(api.fundedAt).getTime() + DEAL_TIMEOUT_MS).toISOString() : null;
+    if (viewerId != null) api.myRole = dealRoleOf(row, viewerId);
+    return api;
+  }
+
+  function enrichDealRow(deal) {
+    const byId = id => users.find(user => Number(user.id) === Number(id)) || {};
+    const buyer = byId(deal.buyer_id);
+    const seller = byId(deal.seller_id);
+    const arbiter = byId(deal.arbiter_id);
+    return {
+      ...deal,
+      buyer_email: buyer.email || '', buyer_name: buyer.display_name || buyer.displayName || '',
+      seller_email: seller.email || '', seller_name: seller.display_name || seller.displayName || '',
+      arbiter_email: arbiter.email || '', arbiter_name: arbiter.display_name || arbiter.displayName || '',
+    };
+  }
+
+  const DEAL_SELECT =
+    'SELECT d.*, bu.email AS buyer_email, bu.display_name AS buyer_name, ' +
+    'su.email AS seller_email, su.display_name AS seller_name, ' +
+    'au.email AS arbiter_email, au.display_name AS arbiter_name ' +
+    'FROM wathiq_deals d ' +
+    'JOIN wathiq_users bu ON bu.id = d.buyer_id ' +
+    'JOIN wathiq_users su ON su.id = d.seller_id ' +
+    'JOIN wathiq_users au ON au.id = d.arbiter_id ';
+
+  async function findDealById(id) {
+    if (pool) {
+      const result = await pool.query(DEAL_SELECT + 'WHERE d.id = $1', [id]);
+      return result.rows[0] || null;
+    }
+    const deal = deals.find(item => item.id === id);
+    return deal ? enrichDealRow(deal) : null;
+  }
+
+  async function saveDeal(deal) {
+    if (pool) {
+      await pool.query(
+        'UPDATE wathiq_deals SET status = $1, dispute = $2, dispute_reason = $3, buyer_vote = $4, seller_vote = $5, arbiter_vote = $6, funded_at = $7, delivered_at = $8, settled_at = $9 WHERE id = $10',
+        [deal.status, deal.dispute === true, deal.dispute_reason || null, deal.buyer_vote || null, deal.seller_vote || null, deal.arbiter_vote || null, deal.funded_at || null, deal.delivered_at || null, deal.settled_at || null, deal.id]
+      );
+      return findDealById(Number(deal.id));
+    }
+    const stored = deals.find(item => item.id === Number(deal.id));
+    if (stored) {
+      stored.status = deal.status;
+      stored.dispute = deal.dispute === true;
+      stored.dispute_reason = deal.dispute_reason || null;
+      stored.buyer_vote = deal.buyer_vote || null;
+      stored.seller_vote = deal.seller_vote || null;
+      stored.arbiter_vote = deal.arbiter_vote || null;
+      stored.funded_at = deal.funded_at || null;
+      stored.delivered_at = deal.delivered_at || null;
+      stored.settled_at = deal.settled_at || null;
+      return enrichDealRow(stored);
+    }
+    return deal;
+  }
+
+  function evaluateDealSettlement(deal) {
+    const votes = [deal.buyer_vote, deal.seller_vote, deal.arbiter_vote].filter(Boolean);
+    const release = votes.filter(vote => vote === 'release').length;
+    const refund = votes.filter(vote => vote === 'refund').length;
+    if (release >= 2) { deal.status = 'released'; deal.settled_at = new Date(now()).toISOString(); return true; }
+    if (refund >= 2) { deal.status = 'refunded'; deal.settled_at = new Date(now()).toISOString(); return true; }
+    return false;
+  }
+
+  async function loadDealForParticipant(req, res) {
+    const id = parsePositiveId(req.params.id);
+    if (id === null) { res.status(400).json({ error: 'invalid deal id' }); return null; }
+    const deal = await findDealById(id);
+    // Non-participants get the same 404 as a missing deal so deal existence is not leaked.
+    if (!deal || !dealRoleOf(deal, req.auth.userId)) { res.status(404).json({ error: 'deal not found' }); return null; }
+    return deal;
+  }
+
+  app.post('/api/deals', authenticate, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const title = typeof body.title === 'string' ? body.title.trim() : '';
+      const asset = typeof body.asset === 'string' ? body.asset.toUpperCase() : '';
+      const amount = body.amount;
+      const myRole = body.myRole === undefined ? 'buyer' : body.myRole;
+      const counterpartyEmail = typeof body.counterpartyEmail === 'string' ? body.counterpartyEmail.trim().toLowerCase() : '';
+      const arbiterEmail = typeof body.arbiterEmail === 'string' ? body.arbiterEmail.trim().toLowerCase() : '';
+      if (title.length < 3 || title.length > 100) return res.status(400).json({ error: 'title must be 3-100 characters' });
+      if (!ALLOWED_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset; MVP supports BNB only' });
+      if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) return res.status(400).json({ error: 'amount must be a positive finite number within supported limits' });
+      if (!hasAtMostDecimalPlaces(amount, 10)) return res.status(400).json({ error: 'amount supports at most 10 decimal places' });
+      if (myRole !== 'buyer' && myRole !== 'seller') return res.status(400).json({ error: "myRole must be 'buyer' or 'seller'" });
+      if (!EMAIL_RE.test(counterpartyEmail) || counterpartyEmail.length > 254) return res.status(400).json({ error: 'valid counterpartyEmail required' });
+      if (!EMAIL_RE.test(arbiterEmail) || arbiterEmail.length > 254) return res.status(400).json({ error: 'valid arbiterEmail required' });
+      const me = await findUserById(req.auth.userId);
+      if (!me) return res.status(401).json({ error: 'account no longer exists' });
+      const counterparty = await findUserByEmail(counterpartyEmail);
+      if (!counterparty) return res.status(400).json({ error: 'counterparty account not found' });
+      const arbiter = await findUserByEmail(arbiterEmail);
+      if (!arbiter) return res.status(400).json({ error: 'arbiter account not found' });
+      const myId = Number(me.id);
+      const counterpartyId = Number(counterparty.id);
+      const arbiterId = Number(arbiter.id);
+      if (counterpartyId === myId) return res.status(400).json({ error: 'counterparty must be a different account' });
+      if (arbiterId === myId || arbiterId === counterpartyId) return res.status(400).json({ error: 'arbiter must be a third, different account' });
+      const buyerId = myRole === 'buyer' ? myId : counterpartyId;
+      const sellerId = myRole === 'buyer' ? counterpartyId : myId;
+      let offerId = null;
+      if (body.offerId !== undefined && body.offerId !== null) {
+        if (!Number.isSafeInteger(body.offerId) || body.offerId <= 0) return res.status(400).json({ error: 'invalid offerId' });
+        offerId = body.offerId;
+        let offerRow = null;
+        if (pool) {
+          const result = await pool.query('SELECT id,owner_id,status FROM wathiq_offers WHERE id = $1', [offerId]);
+          offerRow = result.rows[0] || null;
+          if (offerRow) offerRow = { ownerId: Number(offerRow.owner_id), status: offerRow.status };
+        } else {
+          const found = offers.find(item => item.id === offerId);
+          if (found) offerRow = { ownerId: found.ownerId, status: found.status };
+        }
+        if (!offerRow) return res.status(404).json({ error: 'offer not found' });
+        if (offerRow.status !== 'open') return res.status(400).json({ error: 'offer is not open' });
+        if (offerRow.ownerId !== buyerId && offerRow.ownerId !== sellerId) return res.status(400).json({ error: 'offer is not owned by a deal participant' });
+      }
+      const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
+      const current = now();
+      const previous = dealCreateWindow.get(clientKey);
+      if (previous && current - previous.startedAt < 60_000 && previous.count >= maxCreatesPerMinute) {
+        const retryAfterSeconds = Math.max(1, Math.ceil((previous.startedAt + 60_000 - current) / 1000));
+        res.set('Retry-After', String(retryAfterSeconds));
+        return res.status(429).json({ error: 'rate limit exceeded; try again later' });
+      }
+      if (!previous || current - previous.startedAt >= 60_000) {
+        if (!previous) pruneRateLimitMap(dealCreateWindow, current, 60_000);
+        dealCreateWindow.set(clientKey, { startedAt: current, count: 1 });
+      } else previous.count += 1;
+      let deal;
+      if (pool) {
+        const result = await pool.query(
+          "INSERT INTO wathiq_deals (offer_id,title,asset,amount,buyer_id,seller_id,arbiter_id,status) VALUES ($1,$2,$3,$4,$5,$6,$7,'awaiting_funding') RETURNING id",
+          [offerId, title, asset, amount, buyerId, sellerId, arbiterId]
+        );
+        deal = await findDealById(Number(result.rows[0].id));
+      } else {
+        const row = {
+          id: deals.reduce((max, item) => Math.max(max, item.id), 0) + 1,
+          offer_id: offerId, title, asset, amount,
+          buyer_id: buyerId, seller_id: sellerId, arbiter_id: arbiterId,
+          status: 'awaiting_funding', dispute: false, dispute_reason: null,
+          buyer_vote: null, seller_vote: null, arbiter_vote: null,
+          funded_at: null, delivered_at: null, settled_at: null,
+          created_at: new Date(current).toISOString(),
+        };
+        deals.push(row);
+        deal = enrichDealRow(row);
+      }
+      return res.status(201).json({ item: dealToApi(deal, req.auth.userId) });
+    } catch (error) { return next(error); }
+  });
+
+  app.get('/api/my/deals', authenticate, async (req, res, next) => {
+    try {
+      const limit = parseQueryInteger(req.query.limit, 20, 1, 50);
+      const offset = parseQueryInteger(req.query.offset, 0, 0, 1_000_000);
+      if (limit === null || offset === null) return res.status(400).json({ error: 'limit must be 1-50 and offset must be 0-1000000 integers' });
+      if (pool) {
+        const [count, result] = await Promise.all([
+          pool.query('SELECT COUNT(*)::int AS total FROM wathiq_deals WHERE buyer_id = $1 OR seller_id = $1 OR arbiter_id = $1', [req.auth.userId]),
+          pool.query(DEAL_SELECT + 'WHERE d.buyer_id = $1 OR d.seller_id = $1 OR d.arbiter_id = $1 ORDER BY d.created_at DESC LIMIT $2 OFFSET $3', [req.auth.userId, limit, offset]),
+        ]);
+        return res.json({ items: result.rows.map(row => dealToApi(row, req.auth.userId)), total: count.rows[0].total, limit, offset });
+      }
+      const mine = deals
+        .filter(item => dealRoleOf(item, req.auth.userId))
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return res.json({ items: mine.slice(offset, offset + limit).map(item => dealToApi(enrichDealRow(item), req.auth.userId)), total: mine.length, limit, offset });
+    } catch (error) { return next(error); }
+  });
+
+  app.get('/api/deals/:id', authenticate, async (req, res, next) => {
+    try {
+      const deal = await loadDealForParticipant(req, res);
+      if (!deal) return;
+      return res.json({ item: dealToApi(deal, req.auth.userId) });
+    } catch (error) { return next(error); }
+  });
+
+  app.post('/api/deals/:id/fund', authenticate, async (req, res, next) => {
+    try {
+      const deal = await loadDealForParticipant(req, res);
+      if (!deal) return;
+      if (dealRoleOf(deal, req.auth.userId) !== 'buyer') return res.status(403).json({ error: 'only the buyer can mark a deal as funded' });
+      if (deal.status !== 'awaiting_funding') return res.status(409).json({ error: 'deal is not awaiting funding' });
+      deal.status = 'funded';
+      deal.funded_at = new Date(now()).toISOString();
+      const saved = await saveDeal(deal);
+      return res.json({ item: dealToApi(saved, req.auth.userId) });
+    } catch (error) { return next(error); }
+  });
+
+  app.post('/api/deals/:id/deliver', authenticate, async (req, res, next) => {
+    try {
+      const deal = await loadDealForParticipant(req, res);
+      if (!deal) return;
+      if (dealRoleOf(deal, req.auth.userId) !== 'seller') return res.status(403).json({ error: 'only the seller can mark a deal as delivered' });
+      if (deal.status !== 'funded') return res.status(409).json({ error: 'deal is not in a deliverable state' });
+      deal.status = 'delivered';
+      deal.delivered_at = new Date(now()).toISOString();
+      const saved = await saveDeal(deal);
+      return res.json({ item: dealToApi(saved, req.auth.userId) });
+    } catch (error) { return next(error); }
+  });
+
+  app.post('/api/deals/:id/cancel', authenticate, async (req, res, next) => {
+    try {
+      const deal = await loadDealForParticipant(req, res);
+      if (!deal) return;
+      const role = dealRoleOf(deal, req.auth.userId);
+      if (role !== 'buyer' && role !== 'seller') return res.status(403).json({ error: 'only the buyer or seller can cancel a deal' });
+      if (deal.status !== 'awaiting_funding') return res.status(409).json({ error: 'only an unfunded deal can be cancelled' });
+      deal.status = 'cancelled';
+      deal.settled_at = new Date(now()).toISOString();
+      const saved = await saveDeal(deal);
+      return res.json({ item: dealToApi(saved, req.auth.userId) });
+    } catch (error) { return next(error); }
+  });
+
+  app.post('/api/deals/:id/dispute', authenticate, async (req, res, next) => {
+    try {
+      const deal = await loadDealForParticipant(req, res);
+      if (!deal) return;
+      if (deal.status !== 'funded' && deal.status !== 'delivered') return res.status(409).json({ error: 'only a funded deal can be disputed' });
+      if (deal.dispute === true) return res.status(409).json({ error: 'a dispute is already open for this deal' });
+      const reason = typeof (req.body || {}).reason === 'string' ? req.body.reason.trim() : '';
+      if (reason.length > 300) return res.status(400).json({ error: 'reason must be at most 300 characters' });
+      deal.dispute = true;
+      deal.dispute_reason = reason || null;
+      const saved = await saveDeal(deal);
+      return res.json({ item: dealToApi(saved, req.auth.userId) });
+    } catch (error) { return next(error); }
+  });
+
+  app.post('/api/deals/:id/vote', authenticate, async (req, res, next) => {
+    try {
+      const deal = await loadDealForParticipant(req, res);
+      if (!deal) return;
+      const decision = (req.body || {}).decision;
+      if (decision !== 'release' && decision !== 'refund') return res.status(400).json({ error: "decision must be 'release' or 'refund'" });
+      if (deal.status !== 'funded' && deal.status !== 'delivered') return res.status(409).json({ error: 'deal is not open for voting' });
+      const role = dealRoleOf(deal, req.auth.userId);
+      const field = role + '_vote';
+      if (deal[field]) return res.status(409).json({ error: 'your vote has already been recorded' });
+      deal[field] = decision;
+      evaluateDealSettlement(deal);
+      const saved = await saveDeal(deal);
+      return res.json({ item: dealToApi(saved, req.auth.userId) });
+    } catch (error) { return next(error); }
+  });
+
+  app.post('/api/deals/:id/timeout-refund', authenticate, async (req, res, next) => {
+    try {
+      const deal = await loadDealForParticipant(req, res);
+      if (!deal) return;
+      if (deal.status !== 'funded' && deal.status !== 'delivered') return res.status(409).json({ error: 'deal is not eligible for a timeout refund' });
+      const fundedAtMs = deal.funded_at ? new Date(deal.funded_at).getTime() : 0;
+      if (!fundedAtMs || now() - fundedAtMs < DEAL_TIMEOUT_MS) return res.status(400).json({ error: 'timeout refund is available 30 days after funding' });
+      deal.status = 'refunded';
+      deal.settled_at = new Date(now()).toISOString();
+      const saved = await saveDeal(deal);
+      return res.json({ item: dealToApi(saved, req.auth.userId) });
     } catch (error) { return next(error); }
   });
 
