@@ -113,6 +113,9 @@ class Deal {
   final String? settledAt;
   final String createdAt;
   final String? timeoutRefundAt;
+  final int? chainDealId;
+  final String? fundingTxHash;
+  final bool fundingVerified;
 
   const Deal({
     required this.id,
@@ -135,6 +138,9 @@ class Deal {
     required this.settledAt,
     required this.createdAt,
     required this.timeoutRefundAt,
+    required this.chainDealId,
+    required this.fundingTxHash,
+    required this.fundingVerified,
   });
 
   factory Deal.fromJson(Map<String, dynamic> json) {
@@ -161,6 +167,9 @@ class Deal {
       settledAt: json['settledAt'] as String?,
       createdAt: json['createdAt'] as String? ?? '',
       timeoutRefundAt: json['timeoutRefundAt'] as String?,
+      chainDealId: (json['chainDealId'] as num?)?.toInt(),
+      fundingTxHash: json['fundingTxHash'] as String?,
+      fundingVerified: json['fundingVerified'] as bool? ?? false,
     );
   }
 
@@ -219,7 +228,10 @@ List<String> dealActionsFor(Deal deal, {DateTime? now}) {
   }
   final actions = <String>[];
   if (deal.status == 'awaiting_funding') {
-    if (role == 'buyer') actions.add('fund');
+    if (role == 'buyer') {
+      if (deal.asset == 'USDT') actions.add('linkChain');
+      actions.add('fund');
+    }
     if (role == 'buyer' || role == 'seller') actions.add('cancel');
     return actions;
   }
@@ -399,6 +411,7 @@ class WathiqApi {
 
   static Future<Deal> createDeal({
     required String title,
+    String asset = 'BNB',
     required double amount,
     required String myRole,
     required String counterpartyEmail,
@@ -407,7 +420,7 @@ class WathiqApi {
   }) async {
     final data = await request('POST', '/api/deals', body: {
       'title': title,
-      'asset': 'BNB',
+      'asset': asset,
       'amount': amount,
       'myRole': myRole,
       'counterpartyEmail': counterpartyEmail.trim(),
@@ -423,6 +436,21 @@ class WathiqApi {
       if (reason != null) 'reason': reason,
     });
     return Deal.fromJson(Map<String, dynamic>.from(data['item'] as Map));
+  }
+
+  static Future<Deal> linkChain(int id, String txHash) async {
+    final data = await request('POST', '/api/deals/$id/link-chain', body: {'txHash': txHash.trim()});
+    return Deal.fromJson(Map<String, dynamic>.from(data['item'] as Map));
+  }
+
+  static Future<Map<String, dynamic>> fetchMe() async {
+    final data = await request('GET', '/api/auth/me');
+    return Map<String, dynamic>.from(data['user'] as Map);
+  }
+
+  static Future<Map<String, dynamic>> updateWallet(String? walletAddress) async {
+    final data = await request('PATCH', '/api/auth/me', body: {'walletAddress': walletAddress});
+    return Map<String, dynamic>.from(data['user'] as Map);
   }
 }
 
@@ -443,6 +471,7 @@ class _HomePageState extends State<HomePage> {
   String? error;
   String info = 'سجّل الدخول لإنشاء عرض؛ تصفح العروض متاح للجميع.';
   String? signedInEmail;
+  String? myWallet;
 
   @override
   void initState() {
@@ -456,7 +485,7 @@ class _HomePageState extends State<HomePage> {
     if (WathiqApi.token != null) {
       try {
         final me = await WathiqApi.request('GET', '/api/auth/me');
-        if (mounted) setState(() => signedInEmail = (me['user'] as Map)['email'] as String?);
+        if (mounted) setState(() { final user = me['user'] as Map; signedInEmail = user['email'] as String?; myWallet = user['walletAddress'] as String?; });
       } catch (_) {}
     }
     if (mounted) await loadOffers();
@@ -493,7 +522,7 @@ class _HomePageState extends State<HomePage> {
               try {
                 final user = await WathiqApi.authenticate(email: emailController.text, password: passwordController.text, displayName: register ? nameController.text : null);
                 if (dialogContext.mounted) Navigator.pop(dialogContext, true);
-                if (mounted) setState(() => signedInEmail = user['email'] as String?);
+                if (mounted) setState(() { signedInEmail = user['email'] as String?; myWallet = user['walletAddress'] as String?; });
               } catch (e) {
                 setDialogState(() { saving = false; authError = e.toString().replaceFirst('Exception: ', ''); });
               }
@@ -772,6 +801,43 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> runDealAction(Deal deal, String action) async {
+    if (action == 'linkChain') {
+      final controller = TextEditingController();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('ربط تمويل على السلسلة'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('نفّذ أولًا معاملة إنشاء الصفقة في عقد ضمان USDT من محفظتك (بنفس المحافظ والمبلغ المتفق عليها)، ثم الصق تجزئة المعاملة هنا. سيتحقق الخادم من المعاملة على السلسلة قبل اعتماد التمويل.'),
+              const SizedBox(height: 10),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(labelText: 'تجزئة المعاملة (Tx Hash)', hintText: '0x…'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('تراجع')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('تحقق وربط')),
+          ],
+        ),
+      );
+      final txHash = controller.text.trim();
+      controller.dispose();
+      if (confirmed != true || !mounted) return;
+      try {
+        await WathiqApi.linkChain(deal.id, txHash);
+        await loadMyDeals();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم التحقق من التمويل على السلسلة واعتماده.')));
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))));
+      }
+      return;
+    }
     String? decision;
     String? reason;
     String apiAction = action;
@@ -835,6 +901,67 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> showWalletDialog() async {
+    final controller = TextEditingController(text: myWallet ?? '');
+    String? dialogError;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('عنوان محفظة السلسلة'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('عنوان محفظتك على شبكة BNB. يُستخدم للتحقق من تمويل صفقات USDT على السلسلة: يجب أن تطابق محافظ الأطراف الثلاثة المعاملة المنفذة في العقد.'),
+              const SizedBox(height: 10),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(labelText: 'عنوان المحفظة', hintText: '0x…'),
+              ),
+              if (dialogError != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(dialogError!, style: const TextStyle(color: Colors.redAccent))),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
+            TextButton(
+              onPressed: () async {
+                try {
+                  final user = await WathiqApi.updateWallet(null);
+                  if (dialogContext.mounted) Navigator.pop(dialogContext, true);
+                  if (mounted) setState(() => myWallet = user['walletAddress'] as String?);
+                } catch (e) {
+                  setDialogState(() => dialogError = e.toString().replaceFirst('Exception: ', ''));
+                }
+              },
+              child: const Text('مسح العنوان'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final value = controller.text.trim();
+                if (!RegExp(r'^0x[0-9a-fA-F]{40}$').hasMatch(value)) {
+                  setDialogState(() => dialogError = 'أدخل عنوانًا صحيحًا يبدأ بـ 0x ومكوّنًا من 42 حرفًا.');
+                  return;
+                }
+                try {
+                  final user = await WathiqApi.updateWallet(value);
+                  if (dialogContext.mounted) Navigator.pop(dialogContext, true);
+                  if (mounted) setState(() => myWallet = user['walletAddress'] as String?);
+                } catch (e) {
+                  setDialogState(() => dialogError = e.toString().replaceFirst('Exception: ', ''));
+                }
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث عنوان المحفظة.')));
+    }
+  }
+
   Future<void> showCreateDealDialog() async {
     final formKey = GlobalKey<FormState>();
     final titleController = TextEditingController();
@@ -843,6 +970,7 @@ class _HomePageState extends State<HomePage> {
     final arbiterController = TextEditingController();
     final offerIdController = TextEditingController();
     String myRole = 'buyer';
+    String asset = 'BNB';
     bool saving = false;
     String? formError;
     final created = await showDialog<bool>(
@@ -863,11 +991,20 @@ class _HomePageState extends State<HomePage> {
                 TextFormField(
                   controller: amountController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'مبلغ الضمان', suffixText: 'BNB'),
+                  decoration: InputDecoration(labelText: 'مبلغ الضمان', suffixText: asset),
                   validator: (v) {
                     final amount = double.tryParse(v?.trim() ?? '');
                     return (amount == null || !amount.isFinite || amount <= 0 || amount > 1000000000) ? 'أدخل مبلغًا موجبًا صالحًا' : null;
                   },
+                ),
+                DropdownButtonFormField<String>(
+                  value: asset,
+                  decoration: const InputDecoration(labelText: 'أصل الضمان'),
+                  items: const [
+                    DropdownMenuItem(value: 'BNB', child: Text('BNB')),
+                    DropdownMenuItem(value: 'USDT', child: Text('USDT — يدعم إثبات التمويل على السلسلة')),
+                  ],
+                  onChanged: saving ? null : (v) { if (v != null) setDialogState(() => asset = v); },
                 ),
                 DropdownButtonFormField<String>(
                   value: myRole,
@@ -919,6 +1056,7 @@ class _HomePageState extends State<HomePage> {
                 try {
                   await WathiqApi.createDeal(
                     title: titleController.text.trim(),
+                    asset: asset,
                     amount: double.parse(amountController.text.trim()),
                     myRole: myRole,
                     counterpartyEmail: counterpartyController.text,
@@ -951,6 +1089,7 @@ class _HomePageState extends State<HomePage> {
   Widget buildDealCard(Deal deal) {
     const actionLabels = {
       'fund': 'تأكيد التمويل',
+      'linkChain': 'ربط تمويل على السلسلة',
       'deliver': 'تأكيد التسليم',
       'cancel': 'إلغاء الصفقة',
       'dispute': 'فتح نزاع',
@@ -980,6 +1119,8 @@ class _HomePageState extends State<HomePage> {
               'الأصوات — المشتري: ${voteText(deal.buyerVote)} • البائع: ${voteText(deal.sellerVote)} • المُحكِّم: ${voteText(deal.arbiterVote)}',
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
+            if (deal.fundingVerified)
+              Text('✓ تمويل مُثبت على السلسلة${deal.chainDealId != null ? ' — صفقة العقد رقم ${deal.chainDealId}' : ''}', style: const TextStyle(color: Colors.greenAccent, fontSize: 12)),
             if (deal.dispute)
               Text('⚠ نزاع مفتوح${deal.disputeReason != null ? ': ${deal.disputeReason}' : ''}', style: const TextStyle(color: Colors.orangeAccent, fontSize: 12)),
             if (deal.timeoutRefundAt != null && (deal.status == 'funded' || deal.status == 'delivered'))
@@ -1083,7 +1224,8 @@ class _HomePageState extends State<HomePage> {
             OutlinedButton.icon(onPressed: loadingMyOffers ? null : loadMyOffers, icon: const Icon(Icons.inventory_2_outlined), label: Text(loadingMyOffers ? 'جارٍ تحميل عروضي...' : 'عروضي')),
             OutlinedButton.icon(onPressed: loading ? null : showCreateDealDialog, icon: const Icon(Icons.gavel_outlined), label: const Text('صفقة ضمان جديدة')),
             OutlinedButton.icon(onPressed: loadingDeals ? null : loadMyDeals, icon: const Icon(Icons.handshake_outlined), label: Text(loadingDeals ? 'جارٍ تحميل الصفقات...' : 'صفقات الضمان')),
-            TextButton.icon(onPressed: () async { await WathiqApi.logout(); if (mounted) setState(() { signedInEmail = null; info = 'تم تسجيل الخروج.'; myDeals = []; myOffers = []; }); }, icon: const Icon(Icons.logout), label: const Text('تسجيل الخروج')),
+            OutlinedButton.icon(onPressed: showWalletDialog, icon: const Icon(Icons.account_balance_wallet_outlined), label: Text(myWallet == null ? 'ضبط عنوان محفظتي (للسلسلة)' : 'محفظتي: ${myWallet!.substring(0, 6)}…${myWallet!.substring(myWallet!.length - 4)}')),
+            TextButton.icon(onPressed: () async { await WathiqApi.logout(); if (mounted) setState(() { signedInEmail = null; myWallet = null; info = 'تم تسجيل الخروج.'; myDeals = []; myOffers = []; }); }, icon: const Icon(Icons.logout), label: const Text('تسجيل الخروج')),
           ],
           const SizedBox(height: 16),
           if (loading) const LinearProgressIndicator(),

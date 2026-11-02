@@ -9,12 +9,15 @@ Deal sampleDeal({
   String? sellerVote,
   String? arbiterVote,
   String? timeoutRefundAt,
+  String asset = 'BNB',
+  int? chainDealId,
+  bool fundingVerified = false,
 }) {
   return Deal(
     id: 7,
     offerId: null,
     title: 'Sample deal',
-    asset: 'BNB',
+    asset: asset,
     amount: 1.5,
     status: status,
     dispute: dispute,
@@ -31,6 +34,9 @@ Deal sampleDeal({
     settledAt: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     timeoutRefundAt: timeoutRefundAt,
+    chainDealId: chainDealId,
+    fundingTxHash: null,
+    fundingVerified: fundingVerified,
   );
 }
 
@@ -58,6 +64,9 @@ void main() {
         'settledAt': null,
         'createdAt': '2026-01-01T00:00:00.000Z',
         'timeoutRefundAt': '2026-02-01T00:00:00.000Z',
+        'chainDealId': 7,
+        'fundingTxHash': '0xabc',
+        'fundingVerified': true,
       });
       expect(deal.offerId, 9);
       expect(deal.seller.email, 's@x.ly');
@@ -65,6 +74,9 @@ void main() {
       expect(deal.myVote, isNull);
       expect(deal.dispute, isTrue);
       expect(dealStatusLabel(deal.status), 'مموّلة — الضمان محتجز');
+      expect(deal.chainDealId, 7);
+      expect(deal.fundingTxHash, '0xabc');
+      expect(deal.fundingVerified, isTrue);
     });
   });
 
@@ -95,6 +107,12 @@ void main() {
       );
       expect(dealActionsFor(deal, now: DateTime.parse('2026-01-30T00:00:00.000Z')), isNot(contains('timeoutRefund')));
       expect(dealActionsFor(deal, now: DateTime.parse('2026-01-31T00:00:00.000Z')), contains('timeoutRefund'));
+    });
+
+    test('buyer of a USDT deal can link on-chain funding; BNB deals and sellers cannot', () {
+      expect(dealActionsFor(sampleDeal(asset: 'USDT')), ['linkChain', 'fund', 'cancel']);
+      expect(dealActionsFor(sampleDeal(asset: 'BNB')), ['fund', 'cancel']);
+      expect(dealActionsFor(sampleDeal(asset: 'USDT', myRole: 'seller')), ['cancel']);
     });
 
     test('settled deals expose no actions', () {

@@ -1,11 +1,13 @@
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const { verifyFundingTx, amountToTokenUnits } = require('./chain');
 const crypto = require('node:crypto');
 const { promisify } = require('node:util');
 const scrypt = promisify(crypto.scrypt);
 
 const ALLOWED_ASSETS = new Set(['BNB']);
+const DEAL_ASSETS = new Set(['BNB', 'USDT']);
 const ALLOWED_PAYMENT_METHODS = new Set(['bank_transfer', 'cash', 'crypto', 'digital_service', 'gift_card']);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
@@ -89,7 +91,7 @@ async function ensureSchema(pool) {
   await pool.query(
     'CREATE TABLE IF NOT EXISTS wathiq_users (' +
     'id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, ' +
-    'password_salt TEXT NOT NULL, password_hash TEXT NOT NULL, ' +
+    'password_salt TEXT NOT NULL, password_hash TEXT NOT NULL, wallet_address TEXT, ' +
     "role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());" +
     'CREATE TABLE IF NOT EXISTS wathiq_offers (' +
     'id BIGSERIAL PRIMARY KEY, owner_id BIGINT REFERENCES wathiq_users(id) ON DELETE SET NULL, ' +
@@ -106,17 +108,21 @@ async function ensureSchema(pool) {
     'CREATE TABLE IF NOT EXISTS wathiq_deals (' +
     'id BIGSERIAL PRIMARY KEY, offer_id BIGINT REFERENCES wathiq_offers(id) ON DELETE SET NULL, ' +
     'title VARCHAR(100) NOT NULL CHECK (char_length(title) BETWEEN 3 AND 100), ' +
-    "asset TEXT NOT NULL CHECK (asset = 'BNB'), amount NUMERIC(30, 10) NOT NULL CHECK (amount > 0), " +
+    "asset TEXT NOT NULL CHECK (asset IN ('BNB','USDT')), amount NUMERIC(30, 10) NOT NULL CHECK (amount > 0), " +
     'buyer_id BIGINT NOT NULL REFERENCES wathiq_users(id), seller_id BIGINT NOT NULL REFERENCES wathiq_users(id), arbiter_id BIGINT NOT NULL REFERENCES wathiq_users(id), ' +
     "status TEXT NOT NULL DEFAULT 'awaiting_funding' CHECK (status IN ('awaiting_funding','funded','delivered','released','refunded','cancelled')), " +
     'dispute BOOLEAN NOT NULL DEFAULT FALSE, dispute_reason VARCHAR(300), ' +
     "buyer_vote TEXT CHECK (buyer_vote IN ('release','refund')), seller_vote TEXT CHECK (seller_vote IN ('release','refund')), arbiter_vote TEXT CHECK (arbiter_vote IN ('release','refund')), " +
-    'funded_at TIMESTAMPTZ, delivered_at TIMESTAMPTZ, settled_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ' +
+    'funded_at TIMESTAMPTZ, delivered_at TIMESTAMPTZ, settled_at TIMESTAMPTZ, chain_deal_id BIGINT, funding_tx_hash TEXT, funding_verified BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ' +
     'CHECK (buyer_id <> seller_id AND buyer_id <> arbiter_id AND seller_id <> arbiter_id));' +
     'CREATE INDEX IF NOT EXISTS wathiq_deals_buyer_idx ON wathiq_deals (buyer_id, created_at DESC);' +
     'CREATE INDEX IF NOT EXISTS wathiq_deals_seller_idx ON wathiq_deals (seller_id, created_at DESC);' +
     'CREATE INDEX IF NOT EXISTS wathiq_deals_arbiter_idx ON wathiq_deals (arbiter_id, created_at DESC);' +
-    'CREATE INDEX IF NOT EXISTS wathiq_deals_status_created_idx ON wathiq_deals (status, created_at DESC)'
+    'CREATE INDEX IF NOT EXISTS wathiq_deals_status_created_idx ON wathiq_deals (status, created_at DESC);' +
+    'ALTER TABLE wathiq_users ADD COLUMN IF NOT EXISTS wallet_address TEXT;' +
+    'ALTER TABLE wathiq_deals ADD COLUMN IF NOT EXISTS chain_deal_id BIGINT;' +
+    'ALTER TABLE wathiq_deals ADD COLUMN IF NOT EXISTS funding_tx_hash TEXT;' +
+    'ALTER TABLE wathiq_deals ADD COLUMN IF NOT EXISTS funding_verified BOOLEAN NOT NULL DEFAULT FALSE'
   );
 }
 
@@ -130,6 +136,7 @@ function createApp(options = {}) {
   const now = options.now || (() => Date.now());
   const maxCreatesPerMinute = options.maxCreatesPerMinute ?? 20;
   const pool = options.pool || null;
+  const chainConfig = options.chain || { rpcUrl: process.env.CHAIN_RPC_URL || '', usdtEscrowAddress: (process.env.USDT_ESCROW_ADDRESS || '').toLowerCase() };
   const production = process.env.NODE_ENV === 'production';
   const tokenSecret = options.tokenSecret || process.env.JWT_SECRET || (production ? '' : 'development-only-secret-change-me');
   if (production && !pool) throw new Error('DATABASE_URL is required in production');
@@ -151,22 +158,22 @@ function createApp(options = {}) {
   app.use(cors({ origin: corsOrigin, methods: ['GET', 'POST', 'PATCH', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
   app.use(express.json({ limit: '32kb', strict: true }));
 
-  const userFromRow = row => ({ id: Number(row.id), email: row.email, displayName: row.display_name, role: row.role, createdAt: new Date(row.created_at).toISOString() });
+  const userFromRow = row => ({ id: Number(row.id), email: row.email, displayName: row.display_name, role: row.role, walletAddress: row.wallet_address || null, createdAt: new Date(row.created_at).toISOString() });
   async function findUserByEmail(email) {
     if (pool) { const result = await pool.query('SELECT * FROM wathiq_users WHERE email = $1', [email]); return result.rows[0] || null; }
     return users.find(user => user.email === email) || null;
   }
   async function findUserById(id) {
-    if (pool) { const result = await pool.query('SELECT id,email,display_name,role,created_at FROM wathiq_users WHERE id = $1', [id]); return result.rows[0] || null; }
+    if (pool) { const result = await pool.query('SELECT id,email,display_name,role,wallet_address,created_at FROM wathiq_users WHERE id = $1', [id]); return result.rows[0] || null; }
     return users.find(user => user.id === id) || null;
   }
   async function createUser({ email, displayName, password }) {
     const credentials = await hashPassword(password);
     if (pool) {
-      const result = await pool.query('INSERT INTO wathiq_users (email,display_name,password_salt,password_hash) VALUES ($1,$2,$3,$4) RETURNING id,email,display_name,role,created_at', [email, displayName, credentials.salt, credentials.hash]);
+      const result = await pool.query('INSERT INTO wathiq_users (email,display_name,password_salt,password_hash) VALUES ($1,$2,$3,$4) RETURNING id,email,display_name,role,wallet_address,created_at', [email, displayName, credentials.salt, credentials.hash]);
       return result.rows[0];
     }
-    const user = { id: users.reduce((max, item) => Math.max(max, item.id), 0) + 1, email, display_name: displayName, role: 'user', password_salt: credentials.salt, password_hash: credentials.hash, created_at: new Date(now()).toISOString() };
+    const user = { id: users.reduce((max, item) => Math.max(max, item.id), 0) + 1, email, display_name: displayName, wallet_address: null, role: 'user', password_salt: credentials.salt, password_hash: credentials.hash, created_at: new Date(now()).toISOString() };
     users.push(user);
     return user;
   }
@@ -264,6 +271,32 @@ function createApp(options = {}) {
       const row = await findUserById(req.auth.userId);
       if (!row) return res.status(401).json({ error: 'account no longer exists' });
       return res.json({ user: userFromRow(row) });
+    } catch (error) { return next(error); }
+  });
+
+  app.patch('/api/auth/me', authenticate, async (req, res, next) => {
+    try {
+      const row = await findUserById(req.auth.userId);
+      if (!row) return res.status(401).json({ error: 'account no longer exists' });
+      const body = req.body || {};
+      let displayName = row.display_name;
+      let walletAddress = row.wallet_address || null;
+      if (body.displayName !== undefined) {
+        if (typeof body.displayName !== 'string' || body.displayName.trim().length < 2 || body.displayName.trim().length > 80) return res.status(400).json({ error: 'displayName must be 2-80 characters' });
+        displayName = body.displayName.trim();
+      }
+      if (body.walletAddress !== undefined) {
+        if (body.walletAddress === null || body.walletAddress === '') walletAddress = null;
+        else if (typeof body.walletAddress !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(body.walletAddress.trim())) return res.status(400).json({ error: 'walletAddress must be a 0x-prefixed 20-byte address' });
+        else walletAddress = body.walletAddress.trim().toLowerCase();
+      }
+      if (pool) {
+        const result = await pool.query('UPDATE wathiq_users SET display_name = $1, wallet_address = $2 WHERE id = $3 RETURNING id,email,display_name,role,wallet_address,created_at', [displayName, walletAddress, req.auth.userId]);
+        return res.json({ user: userFromRow(result.rows[0]) });
+      }
+      const stored = users.find(user => user.id === req.auth.userId);
+      if (stored) { stored.display_name = displayName; stored.wallet_address = walletAddress; }
+      return res.json({ user: userFromRow({ ...row, display_name: displayName, wallet_address: walletAddress }) });
     } catch (error) { return next(error); }
   });
 
@@ -509,6 +542,9 @@ function createApp(options = {}) {
         arbiter: { id: Number(row.arbiter_id), email: row.arbiter_email || '', displayName: row.arbiter_name || '' },
       },
       votes: { buyer: row.buyer_vote || null, seller: row.seller_vote || null, arbiter: row.arbiter_vote || null },
+      chainDealId: row.chain_deal_id == null ? null : Number(row.chain_deal_id),
+      fundingTxHash: row.funding_tx_hash || null,
+      fundingVerified: row.funding_verified === true,
       fundedAt: row.funded_at ? new Date(row.funded_at).toISOString() : null,
       deliveredAt: row.delivered_at ? new Date(row.delivered_at).toISOString() : null,
       settledAt: row.settled_at ? new Date(row.settled_at).toISOString() : null,
@@ -553,8 +589,8 @@ function createApp(options = {}) {
   async function saveDeal(deal) {
     if (pool) {
       await pool.query(
-        'UPDATE wathiq_deals SET status = $1, dispute = $2, dispute_reason = $3, buyer_vote = $4, seller_vote = $5, arbiter_vote = $6, funded_at = $7, delivered_at = $8, settled_at = $9 WHERE id = $10',
-        [deal.status, deal.dispute === true, deal.dispute_reason || null, deal.buyer_vote || null, deal.seller_vote || null, deal.arbiter_vote || null, deal.funded_at || null, deal.delivered_at || null, deal.settled_at || null, deal.id]
+        'UPDATE wathiq_deals SET status = $1, dispute = $2, dispute_reason = $3, buyer_vote = $4, seller_vote = $5, arbiter_vote = $6, funded_at = $7, delivered_at = $8, settled_at = $9, chain_deal_id = $10, funding_tx_hash = $11, funding_verified = $12 WHERE id = $13',
+        [deal.status, deal.dispute === true, deal.dispute_reason || null, deal.buyer_vote || null, deal.seller_vote || null, deal.arbiter_vote || null, deal.funded_at || null, deal.delivered_at || null, deal.settled_at || null, deal.chain_deal_id || null, deal.funding_tx_hash || null, deal.funding_verified === true, deal.id]
       );
       return findDealById(Number(deal.id));
     }
@@ -569,6 +605,9 @@ function createApp(options = {}) {
       stored.funded_at = deal.funded_at || null;
       stored.delivered_at = deal.delivered_at || null;
       stored.settled_at = deal.settled_at || null;
+      stored.chain_deal_id = deal.chain_deal_id || null;
+      stored.funding_tx_hash = deal.funding_tx_hash || null;
+      stored.funding_verified = deal.funding_verified === true;
       return enrichDealRow(stored);
     }
     return deal;
@@ -602,7 +641,7 @@ function createApp(options = {}) {
       const counterpartyEmail = typeof body.counterpartyEmail === 'string' ? body.counterpartyEmail.trim().toLowerCase() : '';
       const arbiterEmail = typeof body.arbiterEmail === 'string' ? body.arbiterEmail.trim().toLowerCase() : '';
       if (title.length < 3 || title.length > 100) return res.status(400).json({ error: 'title must be 3-100 characters' });
-      if (!ALLOWED_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset; MVP supports BNB only' });
+      if (!DEAL_ASSETS.has(asset)) return res.status(400).json({ error: 'unsupported asset; deals support BNB and USDT' });
       if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) return res.status(400).json({ error: 'amount must be a positive finite number within supported limits' });
       if (!hasAtMostDecimalPlaces(amount, 10)) return res.status(400).json({ error: 'amount supports at most 10 decimal places' });
       if (myRole !== 'buyer' && myRole !== 'seller') return res.status(400).json({ error: "myRole must be 'buyer' or 'seller'" });
@@ -665,6 +704,7 @@ function createApp(options = {}) {
           status: 'awaiting_funding', dispute: false, dispute_reason: null,
           buyer_vote: null, seller_vote: null, arbiter_vote: null,
           funded_at: null, delivered_at: null, settled_at: null,
+          chain_deal_id: null, funding_tx_hash: null, funding_verified: false,
           created_at: new Date(current).toISOString(),
         };
         deals.push(row);
@@ -709,6 +749,64 @@ function createApp(options = {}) {
       if (deal.status !== 'awaiting_funding') return res.status(409).json({ error: 'deal is not awaiting funding' });
       deal.status = 'funded';
       deal.funded_at = new Date(now()).toISOString();
+      const saved = await saveDeal(deal);
+      return res.json({ item: dealToApi(saved, req.auth.userId) });
+    } catch (error) { return next(error); }
+  });
+
+  app.post('/api/deals/:id/link-chain', authenticate, async (req, res, next) => {
+    try {
+      const deal = await loadDealForParticipant(req, res);
+      if (!deal) return;
+      if (dealRoleOf(deal, req.auth.userId) !== 'buyer') return res.status(403).json({ error: 'only the buyer can link on-chain funding' });
+      if (deal.status !== 'awaiting_funding') return res.status(409).json({ error: 'deal is not awaiting funding' });
+      if (deal.asset !== 'USDT') return res.status(400).json({ error: 'on-chain funding verification is available for USDT deals' });
+      if (!chainConfig.rpcUrl || !chainConfig.usdtEscrowAddress) return res.status(503).json({ error: 'on-chain funding verification is not configured on this server' });
+      const txHash = typeof (req.body || {}).txHash === 'string' ? req.body.txHash.trim().toLowerCase() : '';
+      if (!/^0x[0-9a-f]{64}$/.test(txHash)) return res.status(400).json({ error: 'txHash must be a 0x-prefixed 32-byte transaction hash' });
+      const buyer = await findUserById(Number(deal.buyer_id));
+      const seller = await findUserById(Number(deal.seller_id));
+      const arbiter = await findUserById(Number(deal.arbiter_id));
+      if (!buyer || !buyer.wallet_address || !seller || !seller.wallet_address || !arbiter || !arbiter.wallet_address) {
+        return res.status(400).json({ error: 'buyer, seller and arbiter must all set a wallet address before on-chain funding' });
+      }
+      // One funding transaction (and one on-chain deal) funds exactly one platform deal.
+      let clash = null;
+      if (pool) {
+        const result = await pool.query('SELECT id FROM wathiq_deals WHERE (funding_tx_hash = $1) AND id <> $2', [txHash, deal.id]);
+        clash = result.rows[0] || null;
+      } else {
+        clash = deals.find(item => item.funding_tx_hash === txHash && Number(item.id) !== Number(deal.id)) || null;
+      }
+      if (clash) return res.status(409).json({ error: 'this transaction is already linked to another deal' });
+      let verified;
+      try {
+        verified = await verifyFundingTx({
+          rpcUrl: chainConfig.rpcUrl,
+          escrowAddress: chainConfig.usdtEscrowAddress,
+          txHash,
+          expected: {
+            buyer: buyer.wallet_address,
+            seller: seller.wallet_address,
+            arbiter: arbiter.wallet_address,
+            amountUnits: amountToTokenUnits(Number(deal.amount)),
+          },
+        });
+      } catch (error) {
+        if (error && error.code) return res.status(400).json({ error: error.message });
+        throw error;
+      }
+      if (pool) {
+        const dupe = await pool.query('SELECT id FROM wathiq_deals WHERE chain_deal_id = $1 AND id <> $2', [verified.chainDealId, deal.id]);
+        if (dupe.rows[0]) return res.status(409).json({ error: 'this on-chain deal is already linked to another deal' });
+      } else if (deals.some(item => item.chain_deal_id === verified.chainDealId && Number(item.id) !== Number(deal.id))) {
+        return res.status(409).json({ error: 'this on-chain deal is already linked to another deal' });
+      }
+      deal.status = 'funded';
+      deal.funded_at = new Date(now()).toISOString();
+      deal.chain_deal_id = verified.chainDealId;
+      deal.funding_tx_hash = txHash;
+      deal.funding_verified = true;
       const saved = await saveDeal(deal);
       return res.json({ item: dealToApi(saved, req.auth.userId) });
     } catch (error) { return next(error); }
@@ -784,6 +882,24 @@ function createApp(options = {}) {
       deal.settled_at = new Date(now()).toISOString();
       const saved = await saveDeal(deal);
       return res.json({ item: dealToApi(saved, req.auth.userId) });
+    } catch (error) { return next(error); }
+  });
+
+  app.get('/api/admin/deals', authenticate, requireAdmin, async (req, res, next) => {
+    try {
+      const limit = parseQueryInteger(req.query.limit, 20, 1, 50);
+      const offset = parseQueryInteger(req.query.offset, 0, 0, 1_000_000);
+      if (limit === null || offset === null) return res.status(400).json({ error: 'limit must be 1-50 and offset must be 0-1000000 integers' });
+      const status = typeof req.query.status === 'string' && req.query.status ? req.query.status : null;
+      if (pool) {
+        const count = await pool.query('SELECT COUNT(*)::int AS total FROM wathiq_deals' + (status ? ' WHERE status = $1' : ''), status ? [status] : []);
+        const result = await pool.query(DEAL_SELECT + (status ? 'WHERE d.status = $3' : '') + ' ORDER BY d.created_at DESC LIMIT $1 OFFSET $2', status ? [limit, offset, status] : [limit, offset]);
+        return res.json({ items: result.rows.map(row => dealToApi(row, null)), total: count.rows[0].total, limit, offset });
+      }
+      const filtered = deals
+        .filter(item => !status || item.status === status)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return res.json({ items: filtered.slice(offset, offset + limit).map(item => dealToApi(enrichDealRow(item), null)), total: filtered.length, limit, offset });
     } catch (error) { return next(error); }
   });
 

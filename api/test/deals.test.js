@@ -170,7 +170,7 @@ test('deal creation validates participants, amounts, and linked offers', async t
   assert.equal((await createDeal(base, buyer.token, { arbiterEmail: 'buyer@example.com' })).status, 400);
   assert.equal((await createDeal(base, buyer.token, { amount: -1 })).status, 400);
   assert.equal((await createDeal(base, buyer.token, { amount: 0.00000000001 })).status, 400);
-  assert.equal((await createDeal(base, buyer.token, { asset: 'USDT' })).status, 400);
+  assert.equal((await createDeal(base, buyer.token, { asset: 'DOGE' })).status, 400);
   assert.equal((await createDeal(base, buyer.token, { myRole: 'arbiter' })).status, 400);
 
   // Seller publishes an offer; the buyer opens a deal linked to it.

@@ -28,6 +28,7 @@
     <div class="admin-panel"><div class="admin-actions"><strong id="adminIdentity"></strong><button class="admin-button" id="adminRefresh">تحديث البيانات</button><button class="admin-button" id="adminLogout">تسجيل الخروج</button></div></div>
     <section class="admin-panel"><h2>نظرة عامة</h2><div class="admin-grid" id="adminStats"></div></section>
     <section class="admin-panel"><h2>إدارة العروض</h2><div class="admin-actions"><button class="admin-button" data-offer-status="all">كل العروض</button><button class="admin-button" data-offer-status="open">المفتوحة</button><button class="admin-button" data-offer-status="closed">المغلقة</button></div><div class="admin-table-wrap"><table><thead><tr><th>المعرف</th><th>العنوان</th><th>المالك</th><th>السعر</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody id="adminOffers"></tbody></table></div></section>
+    <section class="admin-panel"><h2>صفقات الضمان</h2><div class="admin-actions"><button class="admin-button" data-deal-status="">كل الصفقات</button><button class="admin-button" data-deal-status="awaiting_funding">بانتظار التمويل</button><button class="admin-button" data-deal-status="funded">مموّلة</button><button class="admin-button" data-deal-status="delivered">تم التسليم</button><button class="admin-button" data-deal-status="released">حُرّرت</button><button class="admin-button" data-deal-status="refunded">رُدّت</button><button class="admin-button" data-deal-status="cancelled">ملغاة</button></div><div class="admin-table-wrap"><table><thead><tr><th>المعرف</th><th>العنوان</th><th>المبلغ</th><th>المشتري</th><th>البائع</th><th>المُحكِّم</th><th>الحالة</th><th>تمويل مثبت؟</th><th>نزاع</th></tr></thead><tbody id="adminDeals"></tbody></table></div></section>
     <section class="admin-panel"><h2>حسابات المستخدمين</h2><div class="admin-table-wrap"><table><thead><tr><th>المعرف</th><th>الاسم</th><th>البريد</th><th>الصلاحية</th><th>تاريخ الإنشاء</th></tr></thead><tbody id="adminUsers"></tbody></table></div></section>
   </section>
 </main>
@@ -40,6 +41,7 @@
   const message = (text, danger=false) => { $('adminMessage').textContent = text; $('adminMessage').classList.toggle('admin-danger', danger); };
   let token = sessionStorage.getItem('wathiq_admin_token') || '';
   let currentStatus = 'all';
+  let currentDealStatus = '';
   async function request(path, options={}) {
     if (!api) throw new Error('عنوان API غير مضبوط في إعدادات نشر الموقع (WATHIQ_API_BASE_URL).');
     const headers = {...(options.headers || {})};
@@ -92,6 +94,19 @@
     }
     if (!data.items.length) { const tr=document.createElement('tr'); const td=cell(tr,'لا توجد نتائج'); td.colSpan=6; tbody.appendChild(tr); }
   }
+  async function loadDeals() {
+    const data = await request('/api/admin/deals?limit=100' + (currentDealStatus ? '&status=' + encodeURIComponent(currentDealStatus) : ''));
+    const tbody=$('adminDeals'); tbody.replaceChildren();
+    const statusLabels={awaiting_funding:'بانتظار التمويل',funded:'مموّلة',delivered:'تم التسليم',released:'حُرّرت للبائع',refunded:'رُدّت للمشتري',cancelled:'ملغاة'};
+    for (const deal of data.items) {
+      const tr=document.createElement('tr');
+      cell(tr,deal.id); cell(tr,deal.title); cell(tr,deal.amount + ' ' + deal.asset);
+      cell(tr,deal.participants.buyer.email); cell(tr,deal.participants.seller.email); cell(tr,deal.participants.arbiter.email);
+      cell(tr,statusLabels[deal.status] || deal.status); cell(tr,deal.fundingVerified ? 'نعم — على السلسلة' : 'لا'); cell(tr,deal.dispute ? 'مفتوح' : '—');
+      tbody.appendChild(tr);
+    }
+    if (!data.items.length) { const tr=document.createElement('tr'); const td=cell(tr,'لا توجد صفقات'); td.colSpan=9; tbody.appendChild(tr); }
+  }
   async function loadUsers() {
     const data=await request('/api/admin/users?limit=100');
     const tbody=$('adminUsers'); tbody.replaceChildren();
@@ -109,7 +124,7 @@
       $('adminLogin').classList.add('admin-hidden');
       $('adminDashboard').classList.remove('admin-hidden');
       $('adminIdentity').textContent='مسجّل الدخول: ' + me.user.email;
-      await Promise.all([loadOverview(),loadOffers(),loadUsers()]);
+      await Promise.all([loadOverview(),loadOffers(),loadUsers(),loadDeals()]);
       message('تم تحميل البيانات من الخادم.');
     } catch(e) { message(e.message || 'تعذر تحميل لوحة الإدارة.',true); }
   }
@@ -129,6 +144,10 @@
   document.querySelectorAll('[data-offer-status]').forEach(button=>button.addEventListener('click',async()=>{
     currentStatus=button.dataset.offerStatus;
     try { await loadOffers(); message('تم تحديث قائمة العروض.'); } catch(e) { message(e.message,true); }
+  }));
+  document.querySelectorAll('[data-deal-status]').forEach(button=>button.addEventListener('click',async()=>{
+    currentDealStatus=button.dataset.dealStatus;
+    try { await loadDeals(); message('تم تحديث قائمة الصفقات.'); } catch(e) { message(e.message,true); }
   }));
   if(token) refresh();
 })();

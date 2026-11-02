@@ -24,6 +24,10 @@ services:
         generateValue: true
       - key: PGSSLMODE
         value: require
+      - key: CHAIN_RPC_URL
+        value: https://bsc-testnet-dataseed.bnbchain.org
+      - key: USDT_ESCROW_ADDRESS
+        value: ""
   - type: web
     name: wathiq-escrow-web
     runtime: static
