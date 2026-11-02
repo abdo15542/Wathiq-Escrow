@@ -1,7 +1,7 @@
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
-const { verifyFundingTx, amountToTokenUnits } = require('./chain');
+const { verifyFundingTx, amountToTokenUnits, getOnChainDealState } = require('./chain');
 const crypto = require('node:crypto');
 const { promisify } = require('node:util');
 const scrypt = promisify(crypto.scrypt);
@@ -871,6 +871,45 @@ function createApp(options = {}) {
     } catch (error) { return next(error); }
   });
 
+  // For chain-verified deals the contract is authoritative: when it has
+  // settled (released or refunded), mirror that outcome onto the record.
+  async function syncDealFromChain(deal) {
+    const chainState = await getOnChainDealState({
+      rpcUrl: chainConfig.rpcUrl,
+      escrowAddress: chainConfig.usdtEscrowAddress,
+      chainDealId: deal.chain_deal_id,
+    });
+    if ((chainState.status === 'released' || chainState.status === 'refunded') && deal.status !== chainState.status) {
+      deal.status = chainState.status;
+      deal.settled_at = new Date(now()).toISOString();
+      return { deal: await saveDeal(deal), chainState, updated: true };
+    }
+    return { deal, chainState, updated: false };
+  }
+
+  app.post('/api/deals/:id/sync-chain', authenticate, async (req, res, next) => {
+    try {
+      const deal = await loadDealForParticipant(req, res);
+      if (!deal) return;
+      if (!chainConfig.rpcUrl || !chainConfig.usdtEscrowAddress) return res.status(503).json({ error: 'on-chain sync is not configured on this server' });
+      if (deal.funding_verified !== true || deal.chain_deal_id == null) return res.status(400).json({ error: 'deal is not linked to a verified on-chain deal' });
+      let result;
+      try {
+        result = await syncDealFromChain(deal);
+      } catch (error) {
+        if (error && error.code) return res.status(400).json({ error: error.message });
+        throw error;
+      }
+      return res.json({
+        item: dealToApi(result.deal, req.auth.userId),
+        chainStatus: result.chainState.status,
+        chainReleaseVotes: result.chainState.releaseVotes,
+        chainRefundVotes: result.chainState.refundVotes,
+        updated: result.updated,
+      });
+    } catch (error) { return next(error); }
+  });
+
   app.post('/api/deals/:id/timeout-refund', authenticate, async (req, res, next) => {
     try {
       const deal = await loadDealForParticipant(req, res);
@@ -882,6 +921,30 @@ function createApp(options = {}) {
       deal.settled_at = new Date(now()).toISOString();
       const saved = await saveDeal(deal);
       return res.json({ item: dealToApi(saved, req.auth.userId) });
+    } catch (error) { return next(error); }
+  });
+
+  app.post('/api/admin/deals/sync-chain', authenticate, requireAdmin, async (req, res, next) => {
+    try {
+      if (!chainConfig.rpcUrl || !chainConfig.usdtEscrowAddress) return res.status(503).json({ error: 'on-chain sync is not configured on this server' });
+      let rows;
+      if (pool) {
+        const result = await pool.query(DEAL_SELECT + "WHERE d.funding_verified = TRUE AND d.status IN ('funded','delivered')");
+        rows = result.rows;
+      } else {
+        rows = deals
+          .filter(item => item.funding_verified === true && (item.status === 'funded' || item.status === 'delivered'))
+          .map(item => enrichDealRow(item));
+      }
+      let updated = 0;
+      let failed = 0;
+      for (const row of rows) {
+        try {
+          const result = await syncDealFromChain(row);
+          if (result.updated) updated += 1;
+        } catch { failed += 1; }
+      }
+      return res.json({ checked: rows.length, updated, failed });
     } catch (error) { return next(error); }
   });
 

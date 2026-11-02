@@ -113,6 +113,7 @@ function dealActionsFor(deal) {
   if (['released', 'refunded', 'cancelled'].includes(deal.status)) return [];
   const actions = [];
   if (deal.status === 'awaiting_funding') {
+    if (role === 'buyer' && deal.asset === 'USDT') actions.push('linkChain');
     if (role === 'buyer') actions.push('fund');
     if (role === 'buyer' || role === 'seller') actions.push('cancel');
     return actions;
@@ -129,6 +130,7 @@ function dealActionsFor(deal) {
 
 const dealActionLabels = {
   fund: 'تأكيد التمويل',
+  linkChain: 'ربط تمويل على السلسلة',
   deliver: 'تأكيد التسليم',
   cancel: 'إلغاء الصفقة',
   dispute: 'فتح نزاع',
@@ -140,7 +142,11 @@ const dealActionLabels = {
 async function runDealAction(deal, action, stateEl) {
   let apiAction = action;
   const body = {};
-  if (action === 'voteRelease' || action === 'voteRefund') {
+  if (action === 'linkChain') {
+    const txHash = window.prompt('الصق تجزئة معاملة إنشاء الصفقة على السلسلة (Tx Hash):', '');
+    if (txHash === null || !txHash.trim()) return;
+    body.txHash = txHash.trim();
+  } else if (action === 'voteRelease' || action === 'voteRefund') {
     apiAction = 'vote';
     body.decision = action === 'voteRelease' ? 'release' : 'refund';
     if (!window.confirm('صوتك نهائي ولا يمكن تغييره بعد التسجيل. متابعة؟')) return;
@@ -185,6 +191,11 @@ async function loadMyDeals() {
         ' · الأصوات — المشتري: ' + voteText(deal.votes.buyer) + '، البائع: ' + voteText(deal.votes.seller) + '، المُحكِّم: ' + voteText(deal.votes.arbiter) +
         (deal.dispute ? ' · ⚠ نزاع مفتوح' : '');
       el.append(title, parties, state);
+      if (deal.fundingVerified) {
+        const badge = document.createElement('small');
+        badge.textContent = '✓ تمويل مثبت على السلسلة' + (deal.chainDealId != null ? ' — صفقة العقد رقم ' + deal.chainDealId : '');
+        el.append(badge);
+      }
       const actions = dealActionsFor(deal);
       if (actions.length) {
         const row = document.createElement('div');
@@ -231,6 +242,7 @@ authForm.addEventListener('submit', async event => {
     statusEl.textContent = 'أصبح بإمكانك إنشاء عروض مرتبطة بحسابك.';
     await loadMyOffers();
     await loadMyDeals();
+    await loadWallet();
   } catch (error) {
     setAccountStatus(error.message || 'تعذر تسجيل الدخول.');
   } finally {
@@ -245,6 +257,27 @@ displayName.hidden = document.getElementById('authMode').value !== 'register';
 displayName.required = !displayName.hidden;
 document.getElementById('refreshMyOffers').addEventListener('click', loadMyOffers);
 document.getElementById('refreshMyDeals').addEventListener('click', loadMyDeals);
+async function loadWallet() {
+  const input = document.getElementById('walletInput');
+  const status = document.getElementById('walletStatus');
+  if (!authToken) { input.value = ''; status.textContent = ''; return; }
+  try {
+    const data = await request('/api/auth/me');
+    const wallet = data.user.walletAddress || '';
+    input.value = wallet;
+    status.textContent = wallet ? 'محفظتك المسجلة للتحقق على السلسلة: ' + wallet : 'لم تُضبط محفظة بعد — اضبطها لتفعيل إثبات التمويل على السلسلة لصفقات USDT.';
+  } catch { status.textContent = ''; }
+}
+document.getElementById('saveWallet').addEventListener('click', async () => {
+  if (!authToken) { statusEl.textContent = 'سجّل الدخول أولًا لضبط محفظتك.'; return; }
+  const value = document.getElementById('walletInput').value.trim();
+  try {
+    const data = await request('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ walletAddress: value || null }) });
+    document.getElementById('walletStatus').textContent = data.user.walletAddress ? 'تم حفظ المحفظة: ' + data.user.walletAddress : 'تم مسح عنوان المحفظة.';
+  } catch (error) {
+    document.getElementById('walletStatus').textContent = error.message || 'تعذر حفظ المحفظة.';
+  }
+});
 dealForm.addEventListener('submit', async event => {
   event.preventDefault();
   if (!authToken) { statusEl.textContent = 'سجّل الدخول أولًا لإنشاء صفقة ضمان.'; return; }
@@ -273,6 +306,8 @@ document.getElementById('logoutWeb').addEventListener('click', () => {
   setAccountStatus('تم تسجيل الخروج.');
   document.getElementById('myOffers').textContent = 'سجّل الدخول لعرض عروضك.';
   document.getElementById('myDeals').textContent = 'سجّل الدخول لعرض صفقات الضمان الخاصة بك.';
+  document.getElementById('walletInput').value = '';
+  document.getElementById('walletStatus').textContent = '';
 });
 offerForm.addEventListener('submit', async event => {
   event.preventDefault();
@@ -313,6 +348,7 @@ async function restoreSession() {
   }
   await loadMyOffers();
   await loadMyDeals();
+  await loadWallet();
 }
 loadOffers();
 restoreSession();

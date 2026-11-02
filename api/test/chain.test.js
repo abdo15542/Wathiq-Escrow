@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { createApp } = require('../src/app');
+const { createApp, signToken } = require('../src/app');
 const {
   CREATE_DEAL_SELECTOR,
   DEAL_CREATED_TOPIC,
@@ -37,6 +37,11 @@ function buildLog({ dealId, buyer, seller, arbiter, amountUnits }) {
   };
 }
 
+function encodeDealState({ status = 1, releaseVotes = 0, refundVotes = 0, amountUnits = amountToTokenUnits(250) } = {}) {
+  return '0x' + word(BUYER_WALLET) + word(SELLER_WALLET) + word(ARBITER_WALLET) + word(amountUnits) +
+    word(1700000000n) + word(BigInt(status)) + word(BigInt(releaseVotes)) + word(BigInt(refundVotes));
+}
+
 function fundingTx({ amountUnits = amountToTokenUnits(250), dealId = 7n } = {}) {
   const tx = {
     hash: TX_HASH,
@@ -49,7 +54,7 @@ function fundingTx({ amountUnits = amountToTokenUnits(250), dealId = 7n } = {}) 
     blockNumber: '0x10',
     logs: [buildLog({ dealId, buyer: BUYER_WALLET, seller: SELLER_WALLET, arbiter: ARBITER_WALLET, amountUnits })],
   };
-  return { tx, receipt };
+  return { tx, receipt, callResult: encodeDealState({}) };
 }
 
 async function stubRpc(t, getState) {
@@ -62,6 +67,7 @@ async function stubRpc(t, getState) {
       let result = null;
       if (call.method === 'eth_getTransactionByHash') result = state.tx;
       if (call.method === 'eth_getTransactionReceipt') result = state.receipt;
+      if (call.method === 'eth_call') result = state.callResult;
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ jsonrpc: '2.0', id: call.id || 1, result }));
     });
@@ -224,4 +230,78 @@ test('link-chain is unavailable when the server has no chain configuration', asy
   assert.equal(created.status, 201);
   const res = await call(base, buyer.token, 'POST', '/api/deals/' + created.payload.item.id + '/link-chain', { txHash: TX_HASH });
   assert.equal(res.status, 503);
+});
+
+test('sync-chain mirrors an on-chain settlement onto the deal record', async t => {
+  const { base, state, buyer, seller, arbiter } = await setupChainDeal(t);
+  await setWallet(base, buyer.token, BUYER_WALLET);
+  await setWallet(base, seller.token, SELLER_WALLET);
+  await setWallet(base, arbiter.token, ARBITER_WALLET);
+  const created = await call(base, buyer.token, 'POST', '/api/deals', {
+    title: 'USDT deal to sync', asset: 'USDT', amount: 250,
+    counterpartyEmail: 'seller@example.com', arbiterEmail: 'arbiter@example.com',
+  });
+  const dealId = created.payload.item.id;
+  const linked = await call(base, buyer.token, 'POST', '/api/deals/' + dealId + '/link-chain', { txHash: TX_HASH });
+  assert.equal(linked.status, 200);
+
+  // Chain still funded: sync reports the state but changes nothing.
+  const noChange = await call(base, seller.token, 'POST', '/api/deals/' + dealId + '/sync-chain', {});
+  assert.equal(noChange.status, 200);
+  assert.equal(noChange.payload.chainStatus, 'funded');
+  assert.equal(noChange.payload.updated, false);
+  assert.equal(noChange.payload.item.status, 'funded');
+
+  // Chain settles to the seller: the record follows.
+  state.current = { ...fundingTx(), callResult: encodeDealState({ status: 2, releaseVotes: 2 }) };
+  const settled = await call(base, seller.token, 'POST', '/api/deals/' + dealId + '/sync-chain', {});
+  assert.equal(settled.status, 200);
+  assert.equal(settled.payload.chainStatus, 'released');
+  assert.equal(settled.payload.chainReleaseVotes, 2);
+  assert.equal(settled.payload.updated, true);
+  assert.equal(settled.payload.item.status, 'released');
+  assert.ok(settled.payload.item.settledAt);
+});
+
+test('sync-chain rejects deals that are not chain-verified', async t => {
+  const { base, buyer } = await setupChainDeal(t);
+  const created = await call(base, buyer.token, 'POST', '/api/deals', {
+    title: 'Plain BNB deal', asset: 'BNB', amount: 1,
+    counterpartyEmail: 'seller@example.com', arbiterEmail: 'arbiter@example.com',
+  });
+  const res = await call(base, buyer.token, 'POST', '/api/deals/' + created.payload.item.id + '/sync-chain', {});
+  assert.equal(res.status, 400);
+  assert.match(res.payload.error, /not linked/);
+});
+
+test('admin batch sync settles verified deals and requires an admin', async t => {
+  const state = { current: fundingTx() };
+  const rpcUrl = await stubRpc(t, () => state.current);
+  const adminRow = { id: 1, email: 'admin@example.com', display_name: 'Admin User', role: 'admin', created_at: '2026-01-01T00:00:00.000Z', password_salt: 'salt', password_hash: 'unused', wallet_address: null };
+  const app = createApp({ tokenSecret: SECRET, users: [adminRow], chain: { rpcUrl, usdtEscrowAddress: ESCROW } });
+  const base = await withServer(t, app);
+  const buyer = await register(base, 'bb@example.com', 'Batch Buyer');
+  const seller = await register(base, 'ss@example.com', 'Batch Seller');
+  const arbiter = await register(base, 'aa@example.com', 'Batch Arbiter');
+  await setWallet(base, buyer.token, BUYER_WALLET);
+  await setWallet(base, seller.token, SELLER_WALLET);
+  await setWallet(base, arbiter.token, ARBITER_WALLET);
+  const created = await call(base, buyer.token, 'POST', '/api/deals', {
+    title: 'Batch synced deal', asset: 'USDT', amount: 250,
+    counterpartyEmail: 'ss@example.com', arbiterEmail: 'aa@example.com',
+  });
+  const dealId = created.payload.item.id;
+  assert.equal((await call(base, buyer.token, 'POST', '/api/deals/' + dealId + '/link-chain', { txHash: TX_HASH })).status, 200);
+
+  const forbidden = await call(base, buyer.token, 'POST', '/api/admin/deals/sync-chain', {});
+  assert.equal(forbidden.status, 403);
+
+  state.current = { ...fundingTx(), callResult: encodeDealState({ status: 3, refundVotes: 2 }) };
+  const adminToken = signToken({ sub: 1, role: 'admin', iat: 1, exp: 9999999999 }, SECRET);
+  const batch = await call(base, adminToken, 'POST', '/api/admin/deals/sync-chain', {});
+  assert.equal(batch.status, 200, JSON.stringify(batch.payload));
+  assert.deepEqual(batch.payload, { checked: 1, updated: 1, failed: 0 });
+
+  const mine = await call(base, buyer.token, 'GET', '/api/my/deals');
+  assert.equal(mine.payload.items.find(item => item.id === dealId).status, 'refunded');
 });

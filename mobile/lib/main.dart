@@ -246,6 +246,7 @@ List<String> dealActionsFor(Deal deal, {DateTime? now}) {
     if (timeoutAt != null && !(now ?? DateTime.now()).isBefore(timeoutAt)) {
       actions.add('timeoutRefund');
     }
+    if (deal.fundingVerified) actions.add('syncChain');
   }
   return actions;
 }
@@ -845,6 +846,7 @@ class _HomePageState extends State<HomePage> {
       apiAction = 'vote';
       decision = action == 'voteRelease' ? 'release' : 'refund';
     }
+    if (action == 'syncChain') apiAction = 'sync-chain';
     if (action == 'dispute') {
       final controller = TextEditingController();
       final confirmed = await showDialog<bool>(
@@ -872,6 +874,7 @@ class _HomePageState extends State<HomePage> {
         'cancel': 'إلغاء هذه الصفقة نهائيًا قبل التمويل؟',
         'vote': 'صوتك نهائي ولا يمكن تغييره بعد التسجيل.',
         'timeoutRefund': 'ردّ المبلغ للمشتري لانقضاء 30 يومًا دون تسوية؟',
+        'sync-chain': 'مزامنة حالة الصفقة مع العقد على السلسلة؟ إن كانت الصفقة مُسوّاة هناك ستنعكس التسوية هنا.',
       };
       final confirmed = await showDialog<bool>(
         context: context,
@@ -1090,6 +1093,7 @@ class _HomePageState extends State<HomePage> {
     const actionLabels = {
       'fund': 'تأكيد التمويل',
       'linkChain': 'ربط تمويل على السلسلة',
+      'syncChain': 'مزامنة حالة السلسلة',
       'deliver': 'تأكيد التسليم',
       'cancel': 'إلغاء الصفقة',
       'dispute': 'فتح نزاع',

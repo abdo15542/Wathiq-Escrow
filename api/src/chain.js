@@ -8,6 +8,7 @@
 // the DealCreated event). Constants below come from the compiled contracts.
 
 const CREATE_DEAL_SELECTOR = '0xa2cd4158'; // createDeal(address,address,uint256)
+const GET_DEAL_SELECTOR = '0x82fd5bac'; // getDeal(uint256)
 const DEAL_CREATED_TOPIC = '0xc0dc858eb5e76db42fc22f698ea72b0028bc33dee3d481e9be61f0103b51bbd4'; // DealCreated(uint256,address,address,address,uint256)
 
 function chainError(code, message) {
@@ -120,11 +121,36 @@ async function verifyFundingTx({ rpcUrl, escrowAddress, txHash, expected, fetchI
   return { chainDealId: Number(created.dealId), blockNumber: parseInt(receipt.blockNumber, 16) };
 }
 
+// Reads the current on-chain state of a WathiqUSDTEscrow deal via eth_call.
+// The Deal struct is eight static words: buyer, seller, arbiter, amount,
+// createdAt, status (0 none, 1 funded, 2 released, 3 refunded), vote counts.
+async function getOnChainDealState({ rpcUrl, escrowAddress, chainDealId, fetchImpl = fetch }) {
+  const data = GET_DEAL_SELECTOR + BigInt(chainDealId).toString(16).padStart(64, '0');
+  const result = await rpcCall(rpcUrl, 'eth_call', [{ to: escrowAddress, data }, 'latest'], fetchImpl);
+  if (!result || result === '0x') throw chainError('deal_not_on_chain', 'on-chain deal not found');
+  const hex = String(result).slice(2);
+  if (hex.length !== 8 * 64) throw chainError('bad_state', 'unexpected getDeal response from chain RPC');
+  const wordAt = index => hex.slice(index * 64, (index + 1) * 64);
+  const statusCode = Number(BigInt('0x' + wordAt(5)));
+  return {
+    buyer: wordToAddress(wordAt(0)),
+    seller: wordToAddress(wordAt(1)),
+    arbiter: wordToAddress(wordAt(2)),
+    amount: BigInt('0x' + wordAt(3)),
+    createdAt: Number(BigInt('0x' + wordAt(4))),
+    status: ['none', 'funded', 'released', 'refunded'][statusCode] || 'unknown',
+    releaseVotes: Number(BigInt('0x' + wordAt(6))),
+    refundVotes: Number(BigInt('0x' + wordAt(7))),
+  };
+}
+
 module.exports = {
   CREATE_DEAL_SELECTOR,
   DEAL_CREATED_TOPIC,
+  GET_DEAL_SELECTOR,
   amountToTokenUnits,
   decodeCreateDealInput,
   parseDealCreatedLog,
   verifyFundingTx,
+  getOnChainDealState,
 };

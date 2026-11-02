@@ -115,6 +115,12 @@ void main() {
       expect(dealActionsFor(sampleDeal(asset: 'USDT', myRole: 'seller')), ['cancel']);
     });
 
+    test('chain-verified open deals offer sync; unverified and settled do not', () {
+      expect(dealActionsFor(sampleDeal(status: 'funded', fundingVerified: true, myRole: 'arbiter')), contains('syncChain'));
+      expect(dealActionsFor(sampleDeal(status: 'funded')), isNot(contains('syncChain')));
+      expect(dealActionsFor(sampleDeal(status: 'released', fundingVerified: true)), isNot(contains('syncChain')));
+    });
+
     test('settled deals expose no actions', () {
       for (final status in ['released', 'refunded', 'cancelled']) {
         expect(dealActionsFor(sampleDeal(status: status)), isEmpty);
