@@ -92,6 +92,125 @@ async function loadOffers() {
     statusEl.textContent = error.message || 'تعذر تحميل السوق. تأكد من نشر API وضبط عنوانه.';
   }
 }
+
+const dealStatusLabels = {
+  awaiting_funding: 'بانتظار التمويل',
+  funded: 'مموّلة — الضمان محتجز',
+  delivered: 'تم التسليم — بانتظار التسوية',
+  released: 'مُسوّاة — حُرّر للبائع',
+  refunded: 'مُسوّاة — رُدّ للمشتري',
+  cancelled: 'ملغاة',
+};
+const dealRoleLabels = { buyer: 'مشترٍ', seller: 'بائع', arbiter: 'مُحكِّم' };
+const dealForm = document.getElementById('dealForm');
+
+// Mirrors the API escrow rules: role-gated funding/delivery, one vote per
+// participant while funded or delivered, a single dispute, and the 30-day
+// timeout refund after funding.
+function dealActionsFor(deal) {
+  const role = deal.myRole;
+  if (!role) return [];
+  if (['released', 'refunded', 'cancelled'].includes(deal.status)) return [];
+  const actions = [];
+  if (deal.status === 'awaiting_funding') {
+    if (role === 'buyer') actions.push('fund');
+    if (role === 'buyer' || role === 'seller') actions.push('cancel');
+    return actions;
+  }
+  if (deal.status === 'funded' || deal.status === 'delivered') {
+    if (role === 'seller' && deal.status === 'funded') actions.push('deliver');
+    const myVote = deal.votes ? deal.votes[role] : null;
+    if (!myVote) actions.push('voteRelease', 'voteRefund');
+    if (!deal.dispute) actions.push('dispute');
+    if (deal.timeoutRefundAt && Date.now() >= Date.parse(deal.timeoutRefundAt)) actions.push('timeoutRefund');
+  }
+  return actions;
+}
+
+const dealActionLabels = {
+  fund: 'تأكيد التمويل',
+  deliver: 'تأكيد التسليم',
+  cancel: 'إلغاء الصفقة',
+  dispute: 'فتح نزاع',
+  voteRelease: 'صوّت: تحرير للبائع',
+  voteRefund: 'صوّت: ردّ للمشتري',
+  timeoutRefund: 'ردّ انقضاء المهلة (30 يومًا)',
+};
+
+async function runDealAction(deal, action, stateEl) {
+  let apiAction = action;
+  const body = {};
+  if (action === 'voteRelease' || action === 'voteRefund') {
+    apiAction = 'vote';
+    body.decision = action === 'voteRelease' ? 'release' : 'refund';
+    if (!window.confirm('صوتك نهائي ولا يمكن تغييره بعد التسجيل. متابعة؟')) return;
+  } else if (action === 'dispute') {
+    const reason = window.prompt('سبب النزاع (اختياري):', '');
+    if (reason === null) return;
+    if (reason.trim()) body.reason = reason.trim();
+  } else if (!window.confirm('تأكيد تنفيذ هذا الإجراء على الصفقة رقم ' + deal.id + '؟')) {
+    return;
+  }
+  try {
+    await request('/api/deals/' + encodeURIComponent(deal.id) + '/' + apiAction, {
+      method: 'POST', body: JSON.stringify(body),
+    });
+    await loadMyDeals();
+  } catch (error) {
+    stateEl.textContent = error.message || 'تعذر تنفيذ الإجراء.';
+  }
+}
+
+async function loadMyDeals() {
+  const dealsEl = document.getElementById('myDeals');
+  if (!authToken) {
+    dealsEl.textContent = 'سجّل الدخول لعرض صفقات الضمان الخاصة بك.';
+    return;
+  }
+  dealsEl.textContent = 'جارٍ تحميل صفقاتك...';
+  try {
+    const data = await request('/api/my/deals?limit=50');
+    dealsEl.replaceChildren();
+    for (const deal of data.items) {
+      const el = document.createElement('article');
+      el.className = 'offer';
+      const title = document.createElement('h3');
+      title.textContent = deal.title + ' — ' + deal.amount + ' ' + deal.asset;
+      const parties = document.createElement('p');
+      parties.textContent = 'المشتري: ' + deal.participants.buyer.email + ' · البائع: ' + deal.participants.seller.email + ' · المُحكِّم: ' + deal.participants.arbiter.email;
+      const state = document.createElement('small');
+      const voteText = vote => (vote === 'release' ? 'تحرير' : vote === 'refund' ? 'ردّ' : 'لم يصوّت');
+      state.textContent = 'الحالة: ' + (dealStatusLabels[deal.status] || deal.status) +
+        ' · دوري: ' + (dealRoleLabels[deal.myRole] || '') +
+        ' · الأصوات — المشتري: ' + voteText(deal.votes.buyer) + '، البائع: ' + voteText(deal.votes.seller) + '، المُحكِّم: ' + voteText(deal.votes.arbiter) +
+        (deal.dispute ? ' · ⚠ نزاع مفتوح' : '');
+      el.append(title, parties, state);
+      const actions = dealActionsFor(deal);
+      if (actions.length) {
+        const row = document.createElement('div');
+        row.className = 'account-actions';
+        for (const action of actions) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'secondary';
+          button.textContent = dealActionLabels[action] || action;
+          button.addEventListener('click', async () => {
+            button.disabled = true;
+            await runDealAction(deal, action, state);
+            button.disabled = false;
+          });
+          row.append(button);
+        }
+        el.append(row);
+      }
+      dealsEl.append(el);
+    }
+    if (!data.items.length) dealsEl.textContent = 'ليس لديك صفقات ضمان حتى الآن.';
+  } catch (error) {
+    dealsEl.textContent = error.message || 'تعذر تحميل صفقاتك.';
+  }
+}
+
 authForm.addEventListener('submit', async event => {
   event.preventDefault();
   const form = new FormData(authForm);
@@ -111,6 +230,7 @@ authForm.addEventListener('submit', async event => {
     setAccountStatus('تم تسجيل الدخول: ' + accountEmail);
     statusEl.textContent = 'أصبح بإمكانك إنشاء عروض مرتبطة بحسابك.';
     await loadMyOffers();
+    await loadMyDeals();
   } catch (error) {
     setAccountStatus(error.message || 'تعذر تسجيل الدخول.');
   } finally {
@@ -124,11 +244,35 @@ document.getElementById('authMode').addEventListener('change', event => {
 displayName.hidden = document.getElementById('authMode').value !== 'register';
 displayName.required = !displayName.hidden;
 document.getElementById('refreshMyOffers').addEventListener('click', loadMyOffers);
+document.getElementById('refreshMyDeals').addEventListener('click', loadMyDeals);
+dealForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!authToken) { statusEl.textContent = 'سجّل الدخول أولًا لإنشاء صفقة ضمان.'; return; }
+  const form = new FormData(dealForm);
+  const offerIdText = (form.get('offerId') || '').toString().trim();
+  try {
+    await request('/api/deals', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: form.get('title'), asset: 'BNB', amount: Number(form.get('amount')),
+        myRole: form.get('myRole'), counterpartyEmail: form.get('counterpartyEmail'),
+        arbiterEmail: form.get('arbiterEmail'),
+        ...(offerIdText ? { offerId: Number(offerIdText) } : {}),
+      }),
+    });
+    statusEl.textContent = 'تم إنشاء صفقة الضمان.';
+    dealForm.reset();
+    await loadMyDeals();
+  } catch (error) {
+    statusEl.textContent = error.message || 'تعذر إنشاء صفقة الضمان.';
+  }
+});
 document.getElementById('logoutWeb').addEventListener('click', () => {
   authToken = ''; accountEmail = '';
   sessionStorage.removeItem('wathiq_token'); sessionStorage.removeItem('wathiq_email');
   setAccountStatus('تم تسجيل الخروج.');
   document.getElementById('myOffers').textContent = 'سجّل الدخول لعرض عروضك.';
+  document.getElementById('myDeals').textContent = 'سجّل الدخول لعرض صفقات الضمان الخاصة بك.';
 });
 offerForm.addEventListener('submit', async event => {
   event.preventDefault();
@@ -168,6 +312,7 @@ async function restoreSession() {
     setAccountStatus('لم تسجّل الدخول.');
   }
   await loadMyOffers();
+  await loadMyDeals();
 }
 loadOffers();
 restoreSession();

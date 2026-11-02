@@ -29,6 +29,7 @@
           <a href="#how">كيف تعمل</a>
           <a href="#features">الميزات</a>
           <a href="#account">الحساب</a>
+          <a href="#deals">صفقات الضمان</a>
           <a href="#onchain">الصفقات على الشبكة</a>
         </nav>
         <button id="connect" type="button" class="primary">ابدأ الآن</button>
@@ -280,6 +281,35 @@
           </div>
 
           <div id="myOffers" class="offers-list compact" aria-live="polite">سجّل الدخول لعرض عروضك.</div>
+        </div>
+      </section>
+
+
+      <section id="deals" class="section">
+        <div class="container">
+          <div class="section-heading">
+            <div class="eyebrow">صفقات الضمان</div>
+            <h2>دورة ضمان كاملة: تمويل، تسليم، وتسوية بتصويت 2 من 3</h2>
+          </div>
+
+          <form id="dealForm" class="panel-form">
+            <input name="title" type="text" placeholder="عنوان الصفقة" minlength="3" maxlength="100" required />
+            <input name="amount" type="number" placeholder="مبلغ الضمان (BNB)" min="0" step="any" required />
+            <select name="myRole">
+              <option value="buyer">أنا المشتري</option>
+              <option value="seller">أنا البائع</option>
+            </select>
+            <input name="counterpartyEmail" type="email" placeholder="بريد الطرف الآخر (مسجّل في المنصة)" required />
+            <input name="arbiterEmail" type="email" placeholder="بريد المُحكِّم (طرف ثالث مسجّل)" required />
+            <input name="offerId" type="number" min="1" step="1" placeholder="رقم عرض مرتبط (اختياري)" />
+            <button type="submit">إنشاء صفقة ضمان</button>
+          </form>
+
+          <div class="account-actions">
+            <button id="refreshMyDeals" type="button" class="secondary">عرض صفقاتي</button>
+          </div>
+
+          <div id="myDeals" class="offers-list compact" aria-live="polite">سجّل الدخول لعرض صفقات الضمان الخاصة بك.</div>
         </div>
       </section>
 
